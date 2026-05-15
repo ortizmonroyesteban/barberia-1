@@ -36,6 +36,19 @@ export default function MenuTabs({
           Admin
         </Text>
       </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[
+          globalStyles.menuBtn,
+          pantalla === "barbero" &&
+            globalStyles.menuActivo,
+        ]}
+        onPress={() => setPantalla("barbero")}
+      >
+        <Text style={globalStyles.menuTexto}>
+          Barbero
+        </Text>
+      </TouchableOpacity>
     </View>
   );
 }

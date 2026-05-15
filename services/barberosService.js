@@ -1,9 +1,15 @@
 import { supabase } from "../supabase";
 
 export const obtenerBarberos = async () => {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("barberos")
-    .select("*");
+    .select("*")
+    .order("nombre");
+
+  if (error) {
+    console.log(error);
+    return [];
+  }
 
   return data;
 };

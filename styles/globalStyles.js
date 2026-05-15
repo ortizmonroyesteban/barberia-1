@@ -92,9 +92,17 @@ export const globalStyles = StyleSheet.create({
     alignItems: "center",
   },
 
+  sillaSeleccionada: {
+    backgroundColor: "#D4AF37",
+  },
+
   sillaTexto: {
     color: "white",
     fontWeight: "bold",
+  },
+
+  sillaTextoSeleccionado: {
+    color: "#121212",
   },
 
   horaBtn: {
@@ -106,9 +114,17 @@ export const globalStyles = StyleSheet.create({
     alignItems: "center",
   },
 
+  horaBtnSeleccionado: {
+    backgroundColor: "#D4AF37",
+  },
+
   horaTexto: {
     color: "white",
     fontWeight: "bold",
+  },
+
+  horaTextoSeleccionado: {
+    color: "#121212",
   },
 
   reservarBtn: {
