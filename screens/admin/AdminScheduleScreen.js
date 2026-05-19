@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, FlatList, TouchableOpacity, Modal, TextInput, Alert, StyleSheet } from "react-native";
+import { View, Text, FlatList, TouchableOpacity, Modal, Alert, StyleSheet } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { supabase } from "../../supabase";
 import { obtenerHorarios, guardarHorario } from "../../services/horarioService";
+import TimePicker from "../../components/TimePicker";
 
 export default function AdminScheduleScreen() {
   const navigation = useNavigation();
@@ -10,10 +12,10 @@ export default function AdminScheduleScreen() {
   const [barberoSeleccionado, setBarberoSeleccionado] = useState(null);
   const [horarios, setHorarios] = useState([]);
   const [editando, setEditando] = useState(null);
-  const [horaInput, setHoraInput] = useState("");
+  const [horaTemp, setHoraTemp] = useState("");
 
   useEffect(() => {
-    supabase.from("barberos").select("*").order("nombre").then(({ data }) => {
+    supabase.from("barberos").select("id, nombre").order("nombre").then(({ data }) => {
       setBarberos(data || []);
     });
   }, []);
@@ -24,25 +26,22 @@ export default function AdminScheduleScreen() {
     }
   }, [barberoSeleccionado]);
 
-  const abrirEditor = async (dia, campo) => {
+  const abrirEditor = (dia, campo) => {
     const actual = horarios.find(h => h.dia === dia);
     if (!actual) return;
     setEditando({ dia, campo });
-    setHoraInput(actual[campo]);
+    setHoraTemp(actual[campo]);
   };
 
   const guardarHora = async () => {
     if (!editando) return;
-    if (!/^\d{2}:\d{2}$/.test(horaInput)) {
-      Alert.alert("Error", "Formato inválido. Usa HH:MM");
-      return;
-    }
     const { dia, campo } = editando;
-    const nuevos = horarios.map(h => h.dia === dia ? { ...h, [campo]: horaInput } : h);
+    const nuevos = horarios.map(h => h.dia === dia ? { ...h, [campo]: horaTemp } : h);
     setHorarios(nuevos);
     setEditando(null);
     try {
-      await guardarHorario(barberoSeleccionado.id, dia, nuevos.find(h => h.dia === dia).inicio, nuevos.find(h => h.dia === dia).fin);
+      const actual = nuevos.find(h => h.dia === dia);
+      await guardarHorario(barberoSeleccionado.id, dia, actual.inicio, actual.fin);
     } catch (_) {}
   };
 
@@ -64,7 +63,7 @@ export default function AdminScheduleScreen() {
   );
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
         <Text style={styles.backText}>← Volver</Text>
       </TouchableOpacity>
@@ -101,16 +100,9 @@ export default function AdminScheduleScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modal}>
             <Text style={styles.modalTitle}>
-              Editar {editando?.campo === "inicio" ? "inicio" : "fin"}
+              Editar {editando?.campo === "inicio" ? "inicio" : "fin"} — {horarios.find(h => h.dia === editando?.dia)?.label}
             </Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="HH:MM (ej. 09:00)"
-              placeholderTextColor="#666"
-              value={horaInput}
-              onChangeText={setHoraInput}
-              maxLength={5}
-            />
+            <TimePicker value={horaTemp} onTimeChange={setHoraTemp} />
             <View style={styles.modalBtns}>
               <TouchableOpacity style={styles.cancelBtn} onPress={() => setEditando(null)}>
                 <Text style={styles.cancelBtnText}>Cancelar</Text>
@@ -122,13 +114,13 @@ export default function AdminScheduleScreen() {
           </View>
         </View>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#121212" },
-  backBtn: { paddingHorizontal: 20, paddingTop: 50, paddingBottom: 10 },
+  backBtn: { paddingHorizontal: 20, paddingBottom: 10 },
   backText: { color: "#D4AF37", fontSize: 18, fontWeight: "bold" },
   header: { paddingHorizontal: 20, paddingTop: 0, paddingBottom: 15, backgroundColor: "#1E1E1E", borderBottomLeftRadius: 25, borderBottomRightRadius: 25 },
   headerTitle: { color: "#D4AF37", fontSize: 20, fontWeight: "bold" },
@@ -148,8 +140,7 @@ const styles = StyleSheet.create({
   separator: { color: "#555", fontSize: 18, marginHorizontal: 12 },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", padding: 30 },
   modal: { backgroundColor: "#1E1E1E", borderRadius: 25, padding: 25 },
-  modalTitle: { color: "#D4AF37", fontSize: 20, fontWeight: "bold", marginBottom: 15, textAlign: "center" },
-  modalInput: { backgroundColor: "#2A2A2A", color: "white", padding: 15, borderRadius: 12, fontSize: 18, textAlign: "center" },
+  modalTitle: { color: "#D4AF37", fontSize: 20, fontWeight: "bold", marginBottom: 20, textAlign: "center" },
   modalBtns: { flexDirection: "row", justifyContent: "space-between", marginTop: 20 },
   cancelBtn: { backgroundColor: "#555", padding: 12, borderRadius: 12, flex: 1, marginRight: 10, alignItems: "center" },
   cancelBtnText: { color: "white", fontWeight: "bold" },

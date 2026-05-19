@@ -1,7 +1,9 @@
-import React, { useEffect, useState } from "react";
-import { View, Text, FlatList, TouchableOpacity, Alert, TextInput, StyleSheet, Platform, ScrollView } from "react-native";
+import React, { useCallback, useEffect, useState } from "react";
+import { View, Text, FlatList, TouchableOpacity, Alert, TextInput, StyleSheet, Platform, ScrollView, Image } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { supabase } from "../../supabase";
+import { horas } from "../../utils/horarios";
 
 export default function AdminBookingsScreen() {
   const navigation = useNavigation();
@@ -13,9 +15,19 @@ export default function AdminBookingsScreen() {
   const [fechaInput, setFechaInput] = useState("");
 
   useEffect(() => {
-    supabase.from("barberos").select("*").order("nombre").then(({ data }) => { setBarberos(data || []); });
     cargar();
   }, []);
+
+  useEffect(() => {
+    const cargarBarberos = () => supabase.from("barberos").select("id, nombre").order("nombre").then(({ data }) => { setBarberos(data || []); });
+    cargarBarberos();
+    const channel = supabase
+      .channel("admin-bookings")
+      .on("postgres_changes", { event: "*", schema: "public", table: "citas" }, () => { cargar(filtroBarbero, filtroFecha || null); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "barberos" }, cargarBarberos)
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [filtroBarbero, filtroFecha]);
 
   const cargar = async (barberoId, fecha) => {
     let query = supabase
@@ -60,9 +72,19 @@ export default function AdminBookingsScreen() {
     } catch (_) { setCitas(prev); Alert.alert("Error", "Error de conexión al eliminar la cita"); }
   };
 
-  const renderItem = ({ item }) => {
+  const calcularDuracion = (horaStr) => {
+    const idx = horas.indexOf(horaStr);
+    if (idx === -1 || idx === horas.length - 1) return "60 min";
+    const [h1, m1] = horas[idx].split(":").map(Number);
+    const [h2, m2] = horas[idx + 1].split(":").map(Number);
+    const diff = (h2 * 60 + m2) - (h1 * 60 + m1);
+    return `${diff} min`;
+  };
+
+  const renderItem = useCallback(({ item }) => {
     const expanded = expandido === item.id;
     const hora = item.hora?.slice(0, 5);
+    const duracion = calcularDuracion(hora);
     return (
       <TouchableOpacity
         style={styles.card}
@@ -73,13 +95,15 @@ export default function AdminBookingsScreen() {
           <Text style={styles.cardTitle}>👤 {item.cliente_nombre}</Text>
           <Text style={styles.cardFecha}>{item.fecha}</Text>
         </View>
-        <Text style={styles.cardSub}>✂️ {item.barberos?.nombre || "?"} — 🕒 {hora}{item.telefono ? ` — 📞 ${item.telefono}` : ""}</Text>
+        <Text style={styles.cardSub}>👤 {item.barberos?.nombre || "?"} — 🕒 {hora} ({duracion}){item.telefono ? ` — 📞 ${item.telefono}` : ""}</Text>
 
         {expanded && (
           <View style={styles.detalles}>
+            <Text style={styles.detalle}>👤 Cliente: {item.cliente_nombre}</Text>
             <Text style={styles.detalle}>📅 Fecha: {item.fecha}</Text>
             <Text style={styles.detalle}>🕒 Hora: {hora}</Text>
-            <Text style={styles.detalle}>✂️ Barbero: {item.barberos?.nombre || "?"}</Text>
+            <Text style={styles.detalle}>⏱ Duración est.: {duracion}</Text>
+            <Text style={styles.detalle}>👤 Barbero: {item.barberos?.nombre || "?"}</Text>
             <Text style={styles.detalle}>💺 Silla: {item.sillas?.numero || "?"}</Text>
             {item.telefono && <Text style={styles.detalle}>📞 Tel: {item.telefono}</Text>}
             <TouchableOpacity style={styles.deleteBtn} onPress={() => eliminar(item.id)}>
@@ -89,10 +113,10 @@ export default function AdminBookingsScreen() {
         )}
       </TouchableOpacity>
     );
-  };
+  }, [expandido, eliminar, calcularDuracion]);
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
         <Text style={styles.backText}>← Volver</Text>
       </TouchableOpacity>
@@ -150,13 +174,13 @@ export default function AdminBookingsScreen() {
         contentContainerStyle={styles.list}
         ListEmptyComponent={<Text style={styles.empty}>No hay citas</Text>}
       />
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#121212" },
-  backBtn: { paddingHorizontal: 20, paddingTop: 50, paddingBottom: 10 },
+  backBtn: { paddingHorizontal: 20, paddingBottom: 10 },
   backText: { color: "#D4AF37", fontSize: 18, fontWeight: "bold" },
   header: { paddingHorizontal: 20, paddingTop: 0, paddingBottom: 15, backgroundColor: "#1E1E1E", borderBottomLeftRadius: 25, borderBottomRightRadius: 25 },
   headerTitle: { color: "#D4AF37", fontSize: 20, fontWeight: "bold" },

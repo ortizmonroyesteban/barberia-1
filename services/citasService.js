@@ -1,21 +1,5 @@
 import { supabase } from "../supabase";
 
-export const obtenerCitas = async () => {
-  const { data, error } = await supabase
-    .from("citas")
-    .select("*")
-    .order("created_at", {
-      ascending: false,
-    });
-
-  if (error) {
-    console.log(error);
-    return [];
-  }
-
-  return data;
-};
-
 export const registrarCita = async ({
   clienteNombre,
   sillaId,
@@ -33,6 +17,7 @@ export const registrarCita = async ({
   };
 
   payload.telefono = telefono || null;
+  payload.estado = "pendiente";
 
   const { error } = await supabase.from("citas").insert([payload]);
 
@@ -49,7 +34,8 @@ export const obtenerCitasPorBarberoYFecha = async (barberoId, fecha) => {
     .from("citas")
     .select("hora")
     .eq("barbero_id", barberoId)
-    .eq("fecha", fecha);
+    .eq("fecha", fecha)
+    .in("estado", ["pendiente", "confirmada"]);
 
   if (error) {
     console.log(error);

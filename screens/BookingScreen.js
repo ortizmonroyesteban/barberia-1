@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, KeyboardAvoidingView, Platform, ScrollView } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { registrarCita } from "../services/citasService";
 import { obtenerSillas } from "../services/sillasService";
@@ -16,6 +17,16 @@ export default function BookingScreen() {
   const confirmar = async () => {
     if (!clienteNombre.trim()) {
       Alert.alert("Error", "Ingresa tu nombre");
+      return;
+    }
+
+    const tel = telefono.trim();
+    if (tel && !/^\d+$/.test(tel)) {
+      Alert.alert("Error", "El teléfono solo debe contener números");
+      return;
+    }
+    if (tel && tel.length < 7) {
+      Alert.alert("Error", "El teléfono debe tener al menos 7 dígitos");
       return;
     }
 
@@ -49,53 +60,59 @@ export default function BookingScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-        <Text style={styles.backText}>← Volver</Text>
-      </TouchableOpacity>
+    <SafeAreaView style={styles.container}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+            <Text style={styles.backText}>← Volver</Text>
+          </TouchableOpacity>
 
-      <View style={styles.summary}>
-        <Text style={styles.summaryTitle}>✂️ {barbero.nombre}</Text>
-        <Text style={styles.summaryDetail}>{fecha} — {hora}</Text>
-      </View>
+          <View style={styles.summary}>
+            <Text style={styles.summaryTitle}>{barbero.nombre}</Text>
+            <Text style={styles.summaryDetail}>{fecha} — {hora}</Text>
+          </View>
 
-      <View style={styles.form}>
-        <Text style={styles.label}>Nombre del cliente</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Ingresa tu nombre"
-          placeholderTextColor="#999"
-          value={clienteNombre}
-          onChangeText={setClienteNombre}
-        />
+          <View style={styles.form}>
+            <Text style={styles.label}>Nombre del cliente</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Ingresa tu nombre"
+              placeholderTextColor="#999"
+              value={clienteNombre}
+              onChangeText={setClienteNombre}
+            />
 
-        <Text style={styles.label}>Teléfono (opcional)</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Ej: 3001234567"
-          placeholderTextColor="#999"
-          value={telefono}
-          onChangeText={setTelefono}
-          keyboardType="phone-pad"
-        />
+            <Text style={styles.label}>Teléfono (opcional)</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Ej: 3001234567"
+              placeholderTextColor="#999"
+              value={telefono}
+              onChangeText={t => setTelefono(t.replace(/[^0-9]/g, ""))}
+              keyboardType="numeric"
+              maxLength={15}
+            />
 
-        <TouchableOpacity
-          style={[styles.confirmBtn, cargando && { opacity: 0.5 }]}
-          disabled={cargando}
-          onPress={confirmar}
-        >
-          <Text style={styles.confirmText}>
-            {cargando ? "Reservando..." : "Confirmar cita"}
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+            <TouchableOpacity
+              style={[styles.confirmBtn, cargando && { opacity: 0.5 }]}
+              disabled={cargando}
+              onPress={confirmar}
+            >
+              <Text style={styles.confirmText}>
+                {cargando ? "Reservando..." : "Confirmar cita"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#121212" },
-  backBtn: { paddingHorizontal: 20, paddingTop: 50, paddingBottom: 10 },
+  scroll: { flexGrow: 1 },
+  backBtn: { paddingHorizontal: 20, paddingBottom: 10 },
   backText: { color: "#D4AF37", fontSize: 18, fontWeight: "bold" },
   summary: { alignItems: "center", paddingVertical: 20, marginHorizontal: 15, backgroundColor: "#1E1E1E", borderRadius: 20, marginBottom: 20 },
   summaryTitle: { color: "white", fontSize: 22, fontWeight: "bold" },

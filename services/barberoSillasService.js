@@ -9,7 +9,7 @@ export const obtenerAsignaciones = async (barberoId) => {
 };
 
 export const obtenerTodasLasAsignaciones = async () => {
-  const { data } = await supabase.from("barbero_sillas").select("*");
+  const { data } = await supabase.from("barbero_sillas").select("silla_id, barbero_id");
   return data || [];
 };
 

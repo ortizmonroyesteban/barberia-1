@@ -1,6 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { View, Text, FlatList, TouchableOpacity, Alert, StyleSheet } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
+import { supabase } from "../supabase";
 import { obtenerCitasPorBarberoYFecha } from "../services/citasService";
 import { obtenerTodasLasAsignaciones } from "../services/barberoSillasService";
 import { horas } from "../utils/horarios";
@@ -8,7 +10,7 @@ import { horas } from "../utils/horarios";
 export default function TimeSlotScreen() {
   const navigation = useNavigation();
   const route = useRoute();
-  const { barbero, fecha } = route.params;
+  const { silla, barbero, fecha } = route.params;
 
   const [ocupadas, setOcupadas] = useState([]);
   const [cargando, setCargando] = useState(true);
@@ -23,18 +25,24 @@ export default function TimeSlotScreen() {
   };
   const hoyLocalStr = toLocalDateStr(hoy);
 
-  useEffect(() => {
-    cargarHorarios();
-  }, []);
-
-  const cargarHorarios = async () => {
+  const cargarHorarios = useCallback(async () => {
     setCargando(true);
     try {
       const citas = await obtenerCitasPorBarberoYFecha(barbero.id, fecha);
       setOcupadas(citas);
     } catch (_) {}
     setCargando(false);
-  };
+  }, [barbero.id, fecha]);
+
+  useEffect(() => { cargarHorarios(); }, [cargarHorarios]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("timeslot-citas")
+      .on("postgres_changes", { event: "*", schema: "public", table: "citas" }, () => { cargarHorarios(); })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [cargarHorarios]);
 
   const esPasada = (hora) => {
     if (fecha !== hoyLocalStr) return false;
@@ -44,13 +52,16 @@ export default function TimeSlotScreen() {
     return h * 60 + m <= minutosActuales;
   };
 
-  const seleccionar = async (hora) => {
-    let asignaciones;
-    try {
-      asignaciones = await obtenerTodasLasAsignaciones();
-    } catch (_) { return; }
-    const asignacion = asignaciones.find(a => a.barbero_id === barbero.id);
-    const sillaId = asignacion?.silla_id;
+  const seleccionar = useCallback(async (hora) => {
+    let sillaId = silla?.id;
+    if (!sillaId) {
+      let asignaciones;
+      try {
+        asignaciones = await obtenerTodasLasAsignaciones();
+      } catch (_) { return; }
+      const asignacion = asignaciones.find(a => a.barbero_id === barbero.id);
+      sillaId = asignacion?.silla_id;
+    }
     if (!sillaId) { Alert.alert("Sin silla", "Este barbero no tiene una silla asignada"); return; }
 
     navigation.navigate("Booking", {
@@ -59,15 +70,15 @@ export default function TimeSlotScreen() {
       hora,
       sillaId,
     });
-  };
+  }, [silla, barbero, fecha, navigation]);
 
-  const slots = horas.map((hora) => ({
+  const slots = useMemo(() => horas.map((hora) => ({
     hora,
     ocupada: ocupadas.includes(hora),
     pasada: esPasada(hora),
-  }));
+  })), [ocupadas, fecha]);
 
-  const renderSlot = ({ item }) => {
+  const renderSlot = useCallback(({ item }) => {
     const { hora, ocupada, pasada } = item;
     const disponible = !ocupada && !pasada;
     const bgColor = disponible ? "#4CAF50" : "#9E9E9E";
@@ -84,16 +95,16 @@ export default function TimeSlotScreen() {
         {pasada && <Text style={styles.slotSub}>Pasado</Text>}
       </TouchableOpacity>
     );
-  };
+  }, [seleccionar]);
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
         <Text style={styles.backText}>← Cambiar fecha</Text>
       </TouchableOpacity>
 
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>✂️ {barbero.nombre}</Text>
+        <Text style={styles.headerTitle}>{barbero.nombre}</Text>
         <Text style={styles.headerDate}>{fecha}</Text>
       </View>
 
@@ -109,16 +120,16 @@ export default function TimeSlotScreen() {
           contentContainerStyle={styles.grid}
         />
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#121212" },
-  backBtn: { paddingHorizontal: 20, paddingTop: 50, paddingBottom: 10 },
+  backBtn: { paddingHorizontal: 20, paddingBottom: 10 },
   backText: { color: "#D4AF37", fontSize: 18, fontWeight: "bold" },
   header: { alignItems: "center", paddingVertical: 15, marginHorizontal: 15, backgroundColor: "#1E1E1E", borderRadius: 20, marginBottom: 15 },
-  headerTitle: { color: "white", fontSize: 22, fontWeight: "bold" },
+  headerTitle: { color: "white", fontSize: 22, fontWeight: "bold", marginTop: 5 },
   headerDate: { color: "#D4AF37", fontSize: 16, marginTop: 5 },
   loading: { color: "#999", textAlign: "center", marginTop: 40, fontSize: 16 },
   grid: { paddingHorizontal: 15, paddingBottom: 30 },

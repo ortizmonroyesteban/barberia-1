@@ -1,5 +1,6 @@
 import React from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 
 export default function ConfirmationScreen() {
@@ -15,7 +16,7 @@ export default function ConfirmationScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <View style={styles.successSection}>
         <View style={styles.checkCircle}>
           <Text style={styles.checkMark}>✓</Text>
@@ -39,7 +40,7 @@ export default function ConfirmationScreen() {
 
         <View style={styles.card}>
           <Text style={styles.cardLabel}>Barbero</Text>
-          <Text style={styles.cardValue}>✂️ {barberoNombre}</Text>
+          <Text style={styles.cardValue}>{barberoNombre}</Text>
         </View>
 
         <View style={styles.card}>
@@ -61,7 +62,7 @@ export default function ConfirmationScreen() {
       <TouchableOpacity style={styles.homeBtn} onPress={volverInicio}>
         <Text style={styles.homeBtnText}>Volver al inicio</Text>
       </TouchableOpacity>
-    </View>
+    </SafeAreaView>
   );
 }
 

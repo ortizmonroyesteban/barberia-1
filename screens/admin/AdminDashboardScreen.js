@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useNavigation } from "@react-navigation/native";
 import { supabase } from "../../supabase";
 import { logoutAdmin } from "../../services/adminAuthService";
 
-export default function AdminDashboardScreen({ navigation }) {
+export default function AdminDashboardScreen() {
+  const navigation = useNavigation();
   const [citasHoy, setCitasHoy] = useState(0);
   const [barberosActivos, setBarberosActivos] = useState(0);
 
@@ -38,28 +41,30 @@ export default function AdminDashboardScreen({ navigation }) {
 
   const cerrarSesion = async () => {
     await logoutAdmin();
-    navigation.reset({ index: 0, routes: [{ name: "Home" }] });
+    navigation.getParent()?.reset({ index: 0, routes: [{ name: "Home" }] });
   };
 
   const accesos = [
     { label: "Barberos", icon: "✂️", screen: "AdminBarbers", color: "#2E7D32" },
     { label: "Horarios", icon: "🕐", screen: "AdminSchedule", color: "#1565C0" },
+    { label: "Sillas", icon: "💺", screen: "AdminSillas", color: "#4CAF50" },
     { label: "Citas", icon: "📋", screen: "AdminBookings", color: "#6A1B9A" },
   ];
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backText}>←</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => { navigation.openDrawer(); }} style={styles.menuBtn}>
-          <Text style={styles.menuIcon}>☰</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Panel de Administración</Text>
-        <TouchableOpacity onPress={cerrarSesion}>
-          <Text style={styles.logoutText}>Cerrar sesión</Text>
-        </TouchableOpacity>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity onPress={() => { navigation.openDrawer(); }} style={styles.menuBtn}>
+            <Text style={styles.menuIcon}>☰</Text>
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.headerTitle}>Panel Admin</Text>
+        <View style={styles.headerRight}>
+          <TouchableOpacity onPress={cerrarSesion}>
+            <Text style={styles.logoutText}>Cerrar sesión</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.body}>
@@ -87,19 +92,19 @@ export default function AdminDashboardScreen({ navigation }) {
           </TouchableOpacity>
         ))}
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#121212" },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingTop: 50, paddingBottom: 15, backgroundColor: "#1E1E1E", borderBottomLeftRadius: 25, borderBottomRightRadius: 25 },
-  headerTitle: { color: "#D4AF37", fontSize: 20, fontWeight: "bold" },
-  backBtn: { padding: 5 },
-  backText: { color: "#D4AF37", fontSize: 22, fontWeight: "bold" },
-  menuBtn: { padding: 5 },
-  menuIcon: { color: "white", fontSize: 24 },
-  logoutText: { color: "#FF6B6B", fontWeight: "bold" },
+  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 15, paddingBottom: 15, paddingTop: 10, backgroundColor: "#1E1E1E", borderBottomLeftRadius: 25, borderBottomRightRadius: 25 },
+  headerLeft: { width: 50, alignItems: "flex-start" },
+  headerTitle: { flex: 1, textAlign: "center", color: "#D4AF37", fontSize: 20, fontWeight: "bold" },
+  headerRight: { width: 100, alignItems: "flex-end" },
+  menuBtn: { padding: 8 },
+  menuIcon: { color: "white", fontSize: 26 },
+  logoutText: { color: "#FF6B6B", fontWeight: "bold", fontSize: 13 },
   body: { padding: 15 },
   resumenRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 25 },
   resumenCard: { width: "48%", padding: 25, borderRadius: 20, alignItems: "center" },

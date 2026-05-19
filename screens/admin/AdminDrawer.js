@@ -1,26 +1,36 @@
-import React from "react";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import React, { useEffect } from "react";
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { createDrawerNavigator, DrawerContentScrollView } from "@react-navigation/drawer";
 import { useNavigation } from "@react-navigation/native";
 import AdminDashboardScreen from "./AdminDashboardScreen";
 import AdminBarbersScreen from "./AdminBarbersScreen";
 import AdminScheduleScreen from "./AdminScheduleScreen";
 import AdminBookingsScreen from "./AdminBookingsScreen";
+import AdminSillasScreen from "./AdminSillasScreen";
 
 const Drawer = createDrawerNavigator();
 
 function CustomDrawerContent(props) {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
+
+  useEffect(() => {
+    if (Platform.OS === "web" && typeof document !== "undefined" && document.activeElement) {
+      document.activeElement.blur();
+    }
+  }, [props.state.index]);
   const items = [
     { label: "Dashboard", icon: "📊", screen: "AdminDashboard" },
     { label: "Barberos", icon: "✂️", screen: "AdminBarbers" },
     { label: "Horarios", icon: "🕐", screen: "AdminSchedule" },
+    { label: "Sillas", icon: "💺", screen: "AdminSillas" },
     { label: "Citas", icon: "📋", screen: "AdminBookings" },
   ];
 
   return (
     <View style={styles.drawerContainer}>
-      <View style={styles.drawerHeader}>
+      <View style={[styles.drawerHeader, { paddingTop: insets.top + 10 }]}>
         <Text style={styles.drawerTitle}>Tauros Barbería</Text>
         <Text style={styles.drawerSub}>Panel Admin</Text>
       </View>
@@ -32,7 +42,9 @@ function CustomDrawerContent(props) {
               styles.drawerItem,
               props.state.routeNames[props.state.index] === item.screen && styles.drawerItemActive,
             ]}
-            onPress={() => navigation.navigate(item.screen)}
+            onPress={() => {
+              props.navigation.navigate(item.screen);
+            }}
           >
             <Text style={styles.drawerItemIcon}>{item.icon}</Text>
             <Text style={styles.drawerItemText}>{item.label}</Text>
@@ -53,13 +65,18 @@ export default function AdminDrawer() {
       screenOptions={{
         headerShown: false,
         drawerType: "front",
+        swipeEnabled: Platform.OS !== "web",
         drawerStyle: { backgroundColor: "#1E1E1E", width: 260 },
         overlayColor: "rgba(0,0,0,0.7)",
+        drawerContentContainerStyle: { outline: "none" },
       }}
     >
-      <Drawer.Screen name="AdminDashboard" component={AdminDashboardScreen} />
+      <Drawer.Screen name="AdminDashboard">
+        {() => <AdminDashboardScreen />}
+      </Drawer.Screen>
       <Drawer.Screen name="AdminBarbers" component={AdminBarbersScreen} />
       <Drawer.Screen name="AdminSchedule" component={AdminScheduleScreen} />
+      <Drawer.Screen name="AdminSillas" component={AdminSillasScreen} />
       <Drawer.Screen name="AdminBookings" component={AdminBookingsScreen} />
     </Drawer.Navigator>
   );
@@ -67,7 +84,7 @@ export default function AdminDrawer() {
 
 const styles = StyleSheet.create({
   drawerContainer: { flex: 1, backgroundColor: "#1E1E1E" },
-  drawerHeader: { paddingTop: 50, paddingBottom: 20, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: "#333" },
+  drawerHeader: { paddingBottom: 20, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: "#333" },
   drawerTitle: { color: "#D4AF37", fontSize: 22, fontWeight: "bold" },
   drawerSub: { color: "#999", fontSize: 14, marginTop: 3 },
   drawerItem: { flexDirection: "row", alignItems: "center", paddingVertical: 15, paddingHorizontal: 20 },
