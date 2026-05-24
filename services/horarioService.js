@@ -1,38 +1,32 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-const DIAS = [
-  { key: "1", label: "Lunes" },
-  { key: "2", label: "Martes" },
-  { key: "3", label: "Miércoles" },
-  { key: "4", label: "Jueves" },
-  { key: "5", label: "Viernes" },
-  { key: "6", label: "Sábado" },
-  { key: "0", label: "Domingo" },
-];
-
+const dias = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
 const getKey = (barberoId) => `@horarios_${barberoId}`;
 
 export const obtenerHorarios = async (barberoId) => {
-  const raw = await AsyncStorage.getItem(getKey(barberoId));
-  if (!raw) return DIAS.map(d => ({ dia: d.key, label: d.label, inicio: "09:00", fin: "18:00" }));
   try {
-    const data = JSON.parse(raw);
-    return DIAS.map(d => ({
-      dia: d.key,
-      label: d.label,
-      inicio: data[d.key]?.inicio ?? "09:00",
-      fin: data[d.key]?.fin ?? "18:00",
-    }));
+    const raw = await AsyncStorage.getItem(getKey(barberoId));
+    if (!raw) {
+      const defaults = {};
+      dias.forEach(d => { defaults[d] = { active: true, inicio: "09:00", fin: "18:00" }; });
+      return defaults;
+    }
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return {};
+    }
   } catch {
-    return DIAS.map(d => ({ dia: d.key, label: d.label, inicio: "09:00", fin: "18:00" }));
+    const defaults = {};
+    dias.forEach(d => { defaults[d] = { active: true, inicio: "09:00", fin: "18:00" }; });
+    return defaults;
   }
 };
 
-export const guardarHorario = async (barberoId, dia, inicio, fin) => {
-  const raw = await AsyncStorage.getItem(getKey(barberoId));
-  const data = raw ? JSON.parse(raw) : {};
-  data[dia] = { inicio, fin };
-  await AsyncStorage.setItem(getKey(barberoId), JSON.stringify(data));
+export const guardarHorario = async (barberoId, horarios) => {
+  try {
+    await AsyncStorage.setItem(getKey(barberoId), JSON.stringify(horarios));
+  } catch {
+    throw new Error("Error al guardar horarios");
+  }
 };
-
-export { DIAS };

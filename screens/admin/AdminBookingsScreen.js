@@ -1,211 +1,208 @@
-import React, { useCallback, useEffect, useState } from "react";
-import { View, Text, FlatList, TouchableOpacity, Alert, TextInput, StyleSheet, Platform, ScrollView, Image } from "react-native";
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { View, Text, FlatList, TouchableOpacity, Alert, StyleSheet, Platform, ScrollView, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { supabase } from "../../supabase";
-import { horas } from "../../utils/horarios";
+import DatePicker from "../../components/DatePicker";
+import { fechaLocal } from "../../utils/horarios";
+import { ErrorView } from "../../components/LoadingScreen";
 
 export default function AdminBookingsScreen() {
   const navigation = useNavigation();
+  const [modo, setModo] = useState("proximas");
   const [citas, setCitas] = useState([]);
   const [barberos, setBarberos] = useState([]);
   const [filtroBarbero, setFiltroBarbero] = useState(null);
   const [filtroFecha, setFiltroFecha] = useState(null);
   const [expandido, setExpandido] = useState(null);
-  const [fechaInput, setFechaInput] = useState("");
+  const [cargando, setCargando] = useState(true);
+  const [error, setError] = useState(null);
+  const citasRef = useRef(citas);
+  citasRef.current = citas;
+
+  const cargarBarberos = useCallback(() =>
+    supabase.from("barberos").select("id, nombre").order("nombre").then(({ data }) => { setBarberos(data || []); }), []);
+
+  const cargarCitas = useCallback(async () => {
+    setCargando(true);
+    setError(null);
+    try {
+      const hoy = fechaLocal();
+      let q = supabase.from("citas").select("id, cliente_nombre, barbero_id, fecha, hora, telefono, estado, silla_id, sillas!silla_id(numero)").order("fecha").order("hora");
+      if (modo === "proximas") {
+        q = q.gte("fecha", hoy).in("estado", ["pendiente", "confirmada"]);
+      } else {
+        q = q.or(`fecha.lt.${hoy},estado.eq.cancelada`);
+      }
+      if (filtroBarbero) q = q.eq("barbero_id", filtroBarbero);
+      if (filtroFecha) { const d = typeof filtroFecha === "string" ? filtroFecha : fechaLocal(filtroFecha); q = q.eq("fecha", d); }
+      const { data, error: err } = await q;
+      if (err) throw err;
+      setCitas(data || []);
+    } catch (e) {
+      setError(e.message || "Error al cargar citas");
+    } finally {
+      setCargando(false);
+    }
+  }, [modo, filtroBarbero, filtroFecha]);
+
+  useEffect(() => { cargarBarberos(); cargarCitas(); }, [cargarBarberos, cargarCitas]);
 
   useEffect(() => {
-    cargar();
-  }, []);
-
-  useEffect(() => {
-    const cargarBarberos = () => supabase.from("barberos").select("id, nombre").order("nombre").then(({ data }) => { setBarberos(data || []); });
-    cargarBarberos();
     const channel = supabase
       .channel("admin-bookings")
-      .on("postgres_changes", { event: "*", schema: "public", table: "citas" }, () => { cargar(filtroBarbero, filtroFecha || null); })
-      .on("postgres_changes", { event: "*", schema: "public", table: "barberos" }, cargarBarberos)
+      .on("postgres_changes", { event: "*", schema: "public", table: "citas" }, cargarCitas)
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [filtroBarbero, filtroFecha]);
+  }, [cargarCitas]);
 
-  const cargar = async (barberoId, fecha) => {
-    let query = supabase
-      .from("citas")
-      .select("*, barberos!barbero_id(nombre), sillas!silla_id(numero)")
-      .order("fecha", { ascending: false })
-      .order("hora", { ascending: false });
-
-    if (barberoId) query = query.eq("barbero_id", barberoId);
-    if (fecha) query = query.eq("fecha", fecha);
-
-    try {
-      const { data } = await query;
-      setCitas(data || []);
-    } catch (_) { setCitas([]); }
-  };
-
-  const aplicarFiltros = () => {
-    cargar(filtroBarbero, filtroFecha || null);
-  };
-
-  const confirmar = () => {
+  const confirmarEliminar = () => {
     if (Platform.OS === "web") return window.confirm("¿Eliminar esta cita?");
     return new Promise(resolve => {
-      Alert.alert("Eliminar", "¿Estás seguro?", [
+      Alert.alert("Eliminar", "¿Eliminar esta cita?", [
         { text: "Cancelar", onPress: () => resolve(false) },
         { text: "Eliminar", onPress: () => resolve(true) },
       ]);
     });
   };
 
-  const eliminar = async (id) => {
-    const confirmado = await confirmar();
+  const eliminar = useCallback(async (id) => {
+    const confirmado = await confirmarEliminar();
     if (!confirmado) return;
-    const prev = citas;
-    setCitas(p => p.filter(c => c.id !== id));
-    setExpandido(null);
+    const anterior = citasRef.current;
+    setCitas(prev => prev.filter(c => c.id !== id));
     try {
       const { error } = await supabase.from("citas").delete().eq("id", id);
-      if (error) { setCitas(prev); Alert.alert("Error", error.message); return; }
-      Alert.alert("Eliminada", "La cita se eliminó correctamente");
-    } catch (_) { setCitas(prev); Alert.alert("Error", "Error de conexión al eliminar la cita"); }
-  };
+      if (error) { setCitas(anterior); Alert.alert("Error", error.message); }
+    } catch (_) { setCitas(anterior); }
+  }, []);
 
-  const calcularDuracion = (horaStr) => {
-    const idx = horas.indexOf(horaStr);
-    if (idx === -1 || idx === horas.length - 1) return "60 min";
-    const [h1, m1] = horas[idx].split(":").map(Number);
-    const [h2, m2] = horas[idx + 1].split(":").map(Number);
-    const diff = (h2 * 60 + m2) - (h1 * 60 + m1);
-    return `${diff} min`;
-  };
+  const barberoNombre = useMemo(() => {
+    const m = {};
+    barberos.forEach(b => { m[b.id] = b.nombre; });
+    return m;
+  }, [barberos]);
 
-  const renderItem = useCallback(({ item }) => {
-    const expanded = expandido === item.id;
-    const hora = item.hora?.slice(0, 5);
-    const duracion = calcularDuracion(hora);
+  const renderItem = ({ item }) => {
+    const abierto = expandido === item.id;
     return (
-      <TouchableOpacity
-        style={styles.card}
-        onPress={() => setExpandido(expanded ? null : item.id)}
-        activeOpacity={0.7}
-      >
-        <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle}>👤 {item.cliente_nombre}</Text>
-          <Text style={styles.cardFecha}>{item.fecha}</Text>
-        </View>
-        <Text style={styles.cardSub}>👤 {item.barberos?.nombre || "?"} — 🕒 {hora} ({duracion}){item.telefono ? ` — 📞 ${item.telefono}` : ""}</Text>
-
-        {expanded && (
-          <View style={styles.detalles}>
-            <Text style={styles.detalle}>👤 Cliente: {item.cliente_nombre}</Text>
-            <Text style={styles.detalle}>📅 Fecha: {item.fecha}</Text>
-            <Text style={styles.detalle}>🕒 Hora: {hora}</Text>
-            <Text style={styles.detalle}>⏱ Duración est.: {duracion}</Text>
-            <Text style={styles.detalle}>👤 Barbero: {item.barberos?.nombre || "?"}</Text>
-            <Text style={styles.detalle}>💺 Silla: {item.sillas?.numero || "?"}</Text>
-            {item.telefono && <Text style={styles.detalle}>📞 Tel: {item.telefono}</Text>}
-            <TouchableOpacity style={styles.deleteBtn} onPress={() => eliminar(item.id)}>
-              <Text style={styles.deleteBtnText}>Eliminar cita</Text>
-            </TouchableOpacity>
+      <TouchableOpacity activeOpacity={0.7} onPress={() => setExpandido(abierto ? null : item.id)}>
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.clienteNombre}>{item.cliente_nombre}</Text>
+            <Text style={styles.citaFecha}>{item.fecha}</Text>
           </View>
-        )}
+          <View style={styles.estadoRow}>
+            <Text style={[
+              styles.estadoText,
+              item.estado === "confirmada" && styles.estadoConfirmada,
+              item.estado === "cancelada" && styles.estadoCancelada,
+              item.estado === "pendiente" && styles.estadoPendiente,
+            ]}>
+              {item.estado === "confirmada" ? "✅ Confirmada" : item.estado === "cancelada" ? "❌ Cancelada" : "⏳ Pendiente"}
+            </Text>
+          </View>
+          {abierto && (
+            <View style={styles.cardDetalle}>
+              <Text style={styles.detalleText}>Barbero: {barberoNombre[item.barbero_id] || "?"}</Text>
+              <Text style={styles.detalleText}>Hora: {item.hora?.slice(0, 5)}</Text>
+              {item.sillas?.numero && <Text style={styles.detalleText}>💺 Silla: {item.sillas.numero}</Text>}
+              {item.telefono && <Text style={styles.detalleText}>📞 {item.telefono}</Text>}
+              <TouchableOpacity style={styles.deleteBtn} onPress={() => eliminar(item.id)}>
+                <Text style={styles.deleteBtnText}>🗑️ Eliminar</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
       </TouchableOpacity>
     );
-  }, [expandido, eliminar, calcularDuracion]);
+  };
 
   return (
     <SafeAreaView style={styles.container}>
-      <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-        <Text style={styles.backText}>← Volver</Text>
-      </TouchableOpacity>
+        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.navigate("AdminDashboard")}>
+          <Text style={styles.backText}>← Volver</Text>
+        </TouchableOpacity>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Citas</Text>
       </View>
 
-      <View style={styles.filtros}>
-        <View style={styles.filtroRow}>
-          <Text style={styles.filtroLabel}>Barbero:</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.barberScroll}>
-            <TouchableOpacity
-              style={[styles.filtroPickerBtn, !filtroBarbero && styles.filtroPickerBtnActive]}
-              onPress={() => setFiltroBarbero(null)}
-            >
-              <Text style={[styles.filtroPickerText, !filtroBarbero && styles.filtroPickerTextActive]}>Todos</Text>
-            </TouchableOpacity>
-            {barberos.map(b => (
-              <TouchableOpacity
-                key={b.id}
-                style={[styles.filtroPickerBtn, filtroBarbero === b.id && styles.filtroPickerBtnActive]}
-                onPress={() => setFiltroBarbero(b.id)}
-              >
-                <Text style={[styles.filtroPickerText, filtroBarbero === b.id && styles.filtroPickerTextActive]}>{b.nombre}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-
-        <View style={styles.filtroRow}>
-          <Text style={styles.filtroLabel}>Fecha:</Text>
-          <TextInput
-            style={styles.fechaInput}
-            placeholder="YYYY-MM-DD"
-            placeholderTextColor="#666"
-            value={fechaInput}
-            onChangeText={setFechaInput}
-            onBlur={() => setFiltroFecha(fechaInput || null)}
-          />
-        </View>
-
-        <TouchableOpacity style={styles.filtrarBtn} onPress={aplicarFiltros}>
-          <Text style={styles.filtrarBtnText}>Filtrar</Text>
+      <View style={styles.segmentRow}>
+        <TouchableOpacity style={[styles.segmentBtn, modo === "proximas" && styles.segmentBtnActive]} onPress={() => setModo("proximas")}>
+          <Text style={[styles.segmentText, modo === "proximas" && styles.segmentTextActive]}>Próximas</Text>
         </TouchableOpacity>
-
-        <TouchableOpacity style={styles.limpiarBtn} onPress={() => { setFiltroBarbero(null); setFiltroFecha(null); cargar(); }}>
-          <Text style={styles.limpiarBtnText}>Limpiar filtros</Text>
+        <TouchableOpacity style={[styles.segmentBtn, modo === "pasadas" && styles.segmentBtnActive]} onPress={() => setModo("pasadas")}>
+          <Text style={[styles.segmentText, modo === "pasadas" && styles.segmentTextActive]}>Pasadas</Text>
         </TouchableOpacity>
       </View>
 
+      <View style={styles.filtros}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            {barberos.map(b => (
+              <TouchableOpacity
+                key={b.id}
+                style={[styles.filtroBtn, filtroBarbero === b.id && styles.filtroBtnActive]}
+                onPress={() => setFiltroBarbero(filtroBarbero === b.id ? null : b.id)}
+              >
+                <Text style={[styles.filtroBtnText, filtroBarbero === b.id && styles.filtroBtnTextActive]}>{b.nombre}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </ScrollView>
+        <DatePicker value={filtroFecha} onChange={setFiltroFecha} />
+      </View>
+
+      {cargando ? (
+        <ActivityIndicator size="large" color="#C8962A" style={{ marginTop: 60 }} />
+      ) : error ? (
+        <ErrorView message={error} onRetry={cargarCitas} />
+      ) : (
       <FlatList
         data={citas}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         contentContainerStyle={styles.list}
-        ListEmptyComponent={<Text style={styles.empty}>No hay citas</Text>}
+        ListEmptyComponent={<Text style={styles.empty}>{modo === "proximas" ? "No hay citas próximas" : "No hay citas pasadas"}</Text>}
       />
+      )}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#121212" },
-  backBtn: { paddingHorizontal: 20, paddingBottom: 10 },
-  backText: { color: "#D4AF37", fontSize: 18, fontWeight: "bold" },
-  header: { paddingHorizontal: 20, paddingTop: 0, paddingBottom: 15, backgroundColor: "#1E1E1E", borderBottomLeftRadius: 25, borderBottomRightRadius: 25 },
-  headerTitle: { color: "#D4AF37", fontSize: 20, fontWeight: "bold" },
-  filtros: { padding: 15, borderBottomWidth: 1, borderBottomColor: "#333" },
-  filtroRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", marginBottom: 10, gap: 6 },
-  filtroLabel: { color: "#999", fontSize: 14, fontWeight: "bold", marginRight: 6 },
-  filtroPickerBtn: { backgroundColor: "#333", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 15 },
-  filtroPickerBtnActive: { backgroundColor: "#2E7D32" },
-  filtroPickerText: { color: "#CCC", fontSize: 13 },
-  filtroPickerTextActive: { color: "white", fontWeight: "bold" },
-  fechaInput: { backgroundColor: "#2A2A2A", color: "white", padding: 8, borderRadius: 8, fontSize: 14, minWidth: 120 },
-  filtrarBtn: { backgroundColor: "#D4AF37", padding: 10, borderRadius: 10, alignItems: "center", marginBottom: 8 },
-  filtrarBtnText: { color: "#121212", fontWeight: "bold" },
-  limpiarBtn: { padding: 8, alignItems: "center" },
-  limpiarBtnText: { color: "#999", fontSize: 13 },
-  barberScroll: { flexDirection: "row", alignItems: "center", gap: 6 },
-  list: { padding: 15 },
-  card: { backgroundColor: "#1E1E1E", padding: 15, borderRadius: 15, marginBottom: 10 },
+  container: { flex: 1, backgroundColor: "#1A1A2E" },
+  backBtn: { paddingHorizontal: 20, paddingVertical: 10 },
+  backText: { color: "#C8962A", fontSize: 18, fontWeight: "bold" },
+  header: { paddingHorizontal: 20, paddingVertical: 14, backgroundColor: "#1E1E1E", borderBottomLeftRadius: 25, borderBottomRightRadius: 25 },
+  headerTitle: { color: "#C8962A", fontSize: 20, fontWeight: "bold" },
+
+  filtros: { paddingHorizontal: 15, paddingTop: 14 },
+  filtroBtn: { backgroundColor: "#333", paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20 },
+  filtroBtnActive: { backgroundColor: "#4CAF50" },
+  filtroBtnText: { color: "#CCC", fontWeight: "bold" },
+  filtroBtnTextActive: { color: "white" },
+  list: { padding: 15, paddingBottom: 30 },
+  empty: { color: "#999", textAlign: "center", marginTop: 40, fontSize: 15 },
+
+  card: { backgroundColor: "#1E1E1E", borderRadius: 15, marginBottom: 10, padding: 14 },
   cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  cardTitle: { color: "white", fontSize: 17, fontWeight: "bold" },
-  cardFecha: { color: "#D4AF37", fontSize: 14 },
-  cardSub: { color: "#CCC", fontSize: 14, marginTop: 5 },
-  detalles: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: "#333" },
-  detalle: { color: "white", fontSize: 14, marginBottom: 5 },
-  deleteBtn: { backgroundColor: "#C0392B", padding: 10, borderRadius: 10, alignItems: "center", marginTop: 10 },
-  deleteBtnText: { color: "white", fontWeight: "bold" },
-  empty: { color: "#999", textAlign: "center", marginTop: 30, fontSize: 16 },
+  clienteNombre: { color: "white", fontSize: 16, fontWeight: "bold" },
+  citaFecha: { color: "#C8962A", fontSize: 14, fontWeight: "bold" },
+  estadoRow: { marginTop: 4 },
+  estadoText: { fontSize: 13, fontWeight: "bold" },
+  estadoConfirmada: { color: "#4CAF50" },
+  estadoCancelada: { color: "#999" },
+  estadoPendiente: { color: "#C8962A" },
+
+  cardDetalle: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: "#333" },
+  detalleText: { color: "#CCC", fontSize: 14, marginBottom: 4 },
+  deleteBtn: { backgroundColor: "#9E9E9E", padding: 10, borderRadius: 10, alignItems: "center", marginTop: 8 },
+  deleteBtnText: { color: "white", fontWeight: "bold", fontSize: 14 },
+
+  segmentRow: { flexDirection: "row", marginHorizontal: 15, marginTop: 12, backgroundColor: "#2A2A2A", borderRadius: 12, padding: 3 },
+  segmentBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: "center" },
+  segmentBtnActive: { backgroundColor: "#C8962A" },
+  segmentText: { color: "#999", fontWeight: "bold", fontSize: 14 },
+  segmentTextActive: { color: "#1A1A2E" },
 });

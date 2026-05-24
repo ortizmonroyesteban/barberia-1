@@ -1,8 +1,9 @@
-import React, { useEffect, useState, useCallback } from "react";
-import { View, Text, TouchableOpacity, Alert, StyleSheet, ScrollView } from "react-native";
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ScrollView, Image, KeyboardAvoidingView, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { supabase } from "../supabase";
+import { fechaLocal } from "../utils/horarios";
 
 import { obtenerBarberos } from "../services/barberosService";
 import { obtenerSillas } from "../services/sillasService";
@@ -17,6 +18,11 @@ export default function BarberoScreen() {
   const [asignaciones, setAsignaciones] = useState([]);
   const [citas, setCitas] = useState([]);
   const [cargando, setCargando] = useState(false);
+  const [passwordInput, setPasswordInput] = useState("");
+  const [selectedBarber, setSelectedBarber] = useState(null);
+  const [showPassword, setShowPassword] = useState(false);
+
+  const BARBER_PASSWORD = "barbero123";
 
   const cargarInicial = useCallback(async () => {
     const [barberosData, asignacionesData] = await Promise.all([
@@ -29,12 +35,30 @@ export default function BarberoScreen() {
 
   useEffect(() => { cargarInicial(); }, [cargarInicial]);
 
+  const barberoRef = useRef(barbero);
+  barberoRef.current = barbero;
+
+  const limpiarCitasVencidas = useCallback(async () => {
+    try {
+      const hoy = new Date();
+      const fechaStr = fechaLocal(hoy);
+      const horaStr = hoy.toTimeString().slice(0, 5);
+      const ayer = new Date(hoy);
+      ayer.setDate(ayer.getDate() - 1);
+      const ayerStr = fechaLocal(ayer);
+      await supabase.from("citas").delete().eq("estado", "cancelada").lt("fecha", fechaStr);
+      await supabase.from("citas").delete().eq("estado", "cancelada").eq("fecha", fechaStr).lt("hora", horaStr);
+      await supabase.from("citas").delete().eq("estado", "confirmada").lt("fecha", ayerStr);
+    } catch (_) {}
+  }, []);
+
   useEffect(() => {
     const channel = supabase
       .channel("barbero-panel")
       .on("postgres_changes", { event: "*", schema: "public", table: "barberos" }, async () => {
-        if (barbero) {
-          const { data } = await       supabase.from("barberos").select("id, nombre, activo, admin_activo, especialidad").eq("id", barbero.id).single();
+        const b = barberoRef.current;
+        if (b) {
+          const { data } = await supabase.from("barberos").select("id, nombre, activo, admin_activo, especialidad, foto_url").eq("id", b.id).single();
           if (data) setBarbero(data);
         }
         const d = await obtenerBarberos();
@@ -47,20 +71,21 @@ export default function BarberoScreen() {
         setSillas(s);
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "citas" }, async () => {
-        if (barbero) {
+        const b = barberoRef.current;
+        if (b) {
           await limpiarCitasVencidas();
-          const { data } = await supabase.from("citas").select("id, cliente_nombre, fecha, hora, telefono, estado, silla_id, sillas!silla_id(numero)").eq("barbero_id", barbero.id).order("fecha").order("hora");
+          const { data } = await supabase.from("citas").select("id, cliente_nombre, fecha, hora, telefono, estado, silla_id, sillas!silla_id(numero)").eq("barbero_id", b.id).order("fecha").order("hora");
           setCitas(data || []);
         }
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [barbero?.id]);
+  }, []);
 
   const entrar = async (b) => {
     setCargando(true);
     try {
-      const { data } = await supabase.from("barberos").select("id, nombre, activo, admin_activo, especialidad").eq("id", b.id).single();
+      const { data } = await supabase.from("barberos").select("id, nombre, activo, admin_activo, especialidad, foto_url").eq("id", b.id).single();
       if (data) setBarbero(data);
       else setBarbero(b);
       const s = await obtenerSillas();
@@ -71,6 +96,17 @@ export default function BarberoScreen() {
     } catch (_) { setBarbero(b); }
     setCargando(false);
     setPaso("panel");
+    setPasswordInput("");
+    setSelectedBarber(null);
+  };
+
+  const verificarPassword = () => {
+    if (passwordInput.trim() !== BARBER_PASSWORD) {
+      Alert.alert("Error", "Contraseña incorrecta");
+      setPasswordInput("");
+      return;
+    }
+    if (selectedBarber) entrar(selectedBarber);
   };
 
   const toggleSilla = async (sillaId) => {
@@ -125,20 +161,6 @@ export default function BarberoScreen() {
     } catch (_) {}
   };
 
-  const limpiarCitasVencidas = async () => {
-    try {
-      const hoy = new Date();
-      const fechaStr = hoy.toISOString().slice(0, 10);
-      const horaStr = hoy.toTimeString().slice(0, 5);
-      const ayer = new Date(hoy);
-      ayer.setDate(ayer.getDate() - 1);
-      const ayerStr = ayer.toISOString().slice(0, 10);
-      await supabase.from("citas").delete().eq("estado", "cancelada").lt("fecha", fechaStr);
-      await supabase.from("citas").delete().eq("estado", "cancelada").eq("fecha", fechaStr).lt("hora", horaStr);
-      await supabase.from("citas").delete().eq("estado", "confirmada").lt("fecha", ayerStr);
-    } catch (_) {}
-  };
-
   const cerrarSesion = async () => {
     setBarbero(null);
     setAsignaciones([]);
@@ -148,43 +170,92 @@ export default function BarberoScreen() {
     try { await cargarInicial(); } catch (_) {}
   };
 
-  const barberoMap = {};
-  barberos.forEach(b => { barberoMap[b.id] = b.nombre; });
+  const barberoMap = useMemo(() => {
+    const m = {};
+    barberos.forEach(b => { m[b.id] = b.nombre; });
+    return m;
+  }, [barberos]);
 
   if (paso === "login") {
     return (
       <SafeAreaView style={styles.container}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
           <Text style={styles.backText}>← Volver</Text>
         </TouchableOpacity>
         <View style={styles.card}>
-          <Text style={styles.section}>Selecciona tu nombre</Text>
-          <View style={styles.grid}>
-            {barberos.map(b => {
-              const sinSilla = !asignaciones.some(a => a.barbero_id === b.id);
-              return (
-                <TouchableOpacity
-                  key={b.id}
-                  style={[
-                    styles.sillaCard,
-                    !b.activo && styles.barberoInactivo,
-                    sinSilla && b.activo && styles.barberoSinSilla,
-                  ]}
-                  onPress={() => entrar(b)}
-                >
-                  <Text style={[
-                    styles.sillaCardTexto,
-                    !b.activo && styles.barberoInactivoTexto,
-                    sinSilla && b.activo && styles.barberoSinSillaTexto,
-                  ]}>
-                    {b.nombre}
-                    {!b.activo ? " (Inactivo)" : sinSilla ? " (Sin silla)" : ""}
-                  </Text>
+          {!selectedBarber ? (
+            <>
+              <Text style={styles.section}>Selecciona tu nombre</Text>
+              <View style={styles.grid}>
+                {barberos.map(b => {
+                  const sinSilla = !asignaciones.some(a => a.barbero_id === b.id);
+                  return (
+                    <TouchableOpacity
+                      key={b.id}
+                      style={[
+                        styles.sillaCard,
+                        !b.activo && styles.barberoInactivo,
+                        sinSilla && b.activo && styles.barberoSinSilla,
+                      ]}
+                      onPress={() => { setSelectedBarber(b); setPasswordInput(""); }}
+                    >
+                      {b.foto_url ? (
+                        <Image source={{ uri: b.foto_url }} style={styles.barberoFoto} />
+                      ) : (
+                        <View style={[styles.barberoAvatar, b.admin_activo && b.activo ? styles.avatarActive : styles.avatarInactive]}>
+                          <Text style={styles.barberoAvatarText}>{b.nombre?.charAt(0).toUpperCase() || "?"}</Text>
+                        </View>
+                      )}
+                      <Text style={[
+                        styles.sillaCardTexto,
+                        !b.activo && styles.barberoInactivoTexto,
+                        sinSilla && b.activo && styles.barberoSinSillaTexto,
+                      ]}>
+                        {b.nombre}
+                      </Text>
+                      <Text style={[
+                        styles.sillaCardSub,
+                        !b.admin_activo ? { color: "#999" } : !b.activo ? { color: "#999" } : sinSilla ? { color: "#B56565" } : { color: "#4CAF50" },
+                      ]}>
+                        {!b.admin_activo ? "Bloqueado" : !b.activo ? "Inactivo" : sinSilla ? "Sin silla" : "Disponible"}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </>
+          ) : (
+            <>
+              <Text style={styles.section}>Contraseña</Text>
+              <Text style={styles.passwordHint}>Ingresa la contraseña para {selectedBarber.nombre}</Text>
+              <View style={styles.passwordRow}>
+                <TextInput
+                  style={styles.passwordInput}
+                  placeholder="Contraseña"
+                  placeholderTextColor="#999"
+                  secureTextEntry={!showPassword}
+                  value={passwordInput}
+                  onChangeText={setPasswordInput}
+                  autoFocus
+                />
+                <TouchableOpacity style={styles.passwordEyeBtn} onPress={() => setShowPassword(!showPassword)}>
+                  <View style={styles.eyeIcon}>
+                    <Text style={styles.eyeText}>👁</Text>
+                    {!showPassword && <View style={styles.eyeLine} />}
+                  </View>
                 </TouchableOpacity>
-              );
-            })}
-          </View>
+              </View>
+              <TouchableOpacity style={styles.passwordConfirmBtn} onPress={verificarPassword}>
+                <Text style={styles.passwordConfirmText}>Entrar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.passwordBackBtn} onPress={() => { setSelectedBarber(null); setPasswordInput(""); }}>
+                <Text style={styles.passwordBackText}>← Cambiar barbero</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     );
   }
@@ -214,7 +285,7 @@ export default function BarberoScreen() {
             onPress={toggleActivo}
           >
             <Text style={styles.toggleBtnText}>
-              {!barbero.admin_activo ? "🔒 Bloqueado" : (barbero.activo ? "🔴 Desactivarme" : "🟢 Activarme")}
+              {!barbero.admin_activo ? "🔒 Bloqueado (admin)" : (barbero.activo ? "🔴 Desactivarme" : "🟢 Activarme")}
             </Text>
           </TouchableOpacity>
 
@@ -241,11 +312,11 @@ export default function BarberoScreen() {
                   if (esMia) {
                     bgColor = "#4CAF50";
                     texto = "Tu silla";
-                    colorTexto = "#A5D6A7";
+                    colorTexto = "white";
                   } else if (esDeOtro) {
-                    bgColor = "#8B0000";
-                    texto = `${barberoMap[asignacion.barbero_id] || "Ocupado"}`;
-                    colorTexto = "#FF6B6B";
+                    bgColor = "#9E9E9E";
+                    texto = `${barberoMap[asignacion.barbero_id] || "Ocupado"} (Ocupada)`;
+                    colorTexto = "white";
                     disabled = true;
                   }
 
@@ -317,26 +388,28 @@ export default function BarberoScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#121212" },
+  container: { flex: 1, backgroundColor: "#1A1A2E" },
   backBtn: { paddingHorizontal: 20, paddingBottom: 10 },
-  backText: { color: "#D4AF37", fontSize: 18, fontWeight: "bold" },
+  backText: { color: "#C8962A", fontSize: 18, fontWeight: "bold" },
 
-  barberoInactivo: { backgroundColor: "#555", opacity: 0.6 },
+  barberoInactivo: { backgroundColor: "#555" },
   barberoInactivoTexto: { color: "#999" },
-  barberoSinSilla: { backgroundColor: "#5C3A3A", opacity: 0.6 },
-  barberoSinSillaTexto: { color: "#B56565" },
+  barberoSinSilla: { backgroundColor: "#9E9E9E" },
+  barberoSinSillaTexto: { color: "white" },
 
   panelHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15 },
-  logoutBtn: { backgroundColor: "#C0392B", paddingHorizontal: 15, paddingVertical: 8, borderRadius: 8 },
+  logoutBtn: { backgroundColor: "#9E9E9E", paddingHorizontal: 15, paddingVertical: 8, borderRadius: 8 },
   logoutBtnText: { color: "white", fontWeight: "bold" },
 
   toggleBtn: { padding: 12, borderRadius: 12, alignItems: "center", marginBottom: 15 },
-  toggleOn: { backgroundColor: "#2E7D32" },
-  toggleOff: { backgroundColor: "#C0392B" },
+  toggleOn: { backgroundColor: "#4CAF50" },
+  toggleOff: { backgroundColor: "#9E9E9E" },
   toggleDisabled: { backgroundColor: "#555" },
   toggleBtnText: { color: "white", fontWeight: "bold", fontSize: 16 },
-  adminBlockedBanner: { backgroundColor: "#8B0000", padding: 12, borderRadius: 12, marginBottom: 15, alignItems: "center" },
+  adminBlockedBanner: { backgroundColor: "#9E9E9E", padding: 12, borderRadius: 12, marginBottom: 15, alignItems: "center" },
   adminBlockedText: { color: "white", fontWeight: "bold", fontSize: 14 },
+  avatarActive: { backgroundColor: "#C8962A" },
+  avatarInactive: { backgroundColor: "#555" },
 
   inactivoOverlay: { backgroundColor: "#555", padding: 20, borderRadius: 12, marginBottom: 15, opacity: 0.6 },
   inactivoOverlayText: { color: "#999", textAlign: "center", fontWeight: "bold" },
@@ -344,8 +417,12 @@ const styles = StyleSheet.create({
   card: { backgroundColor: "#1E1E1E", marginHorizontal: 15, marginBottom: 20, borderRadius: 20, padding: 20 },
   section: { color: "#FFF", fontSize: 20, fontWeight: "bold", marginBottom: 15 },
   grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
-  sillaCard: { width: "48%", backgroundColor: "#2E7D32", padding: 18, borderRadius: 15, marginBottom: 10, alignItems: "center" },
-  sillaCardTexto: { color: "white", fontWeight: "bold" },
+  barberoAvatar: { width: 60, height: 60, borderRadius: 10, justifyContent: "center", alignItems: "center", marginBottom: 8, borderWidth: 2, borderColor: "rgba(255,255,255,0.3)" },
+  barberoFoto: { width: 60, height: 60, borderRadius: 10, marginBottom: 8, borderWidth: 2, borderColor: "#C8962A" },
+  barberoAvatarText: { color: "white", fontSize: 20, fontWeight: "bold" },
+  sillaCard: { width: "48%", backgroundColor: "#4CAF50", padding: 18, borderRadius: 15, marginBottom: 10, alignItems: "center" },
+  sillaCardTexto: { color: "white", fontWeight: "bold", fontSize: 15, textAlign: "center" },
+  sillaCardSub: { fontSize: 11, marginTop: 3, fontWeight: "bold" },
   sillaHint: { color: "#CCC", marginBottom: 15 },
   miSilla: { borderWidth: 2, borderColor: "#4CAF50" },
   sillaSubtexto: { fontSize: 12, marginTop: 4 },
@@ -355,14 +432,25 @@ const styles = StyleSheet.create({
   citaCard: { backgroundColor: "#2A2A2A", padding: 15, borderRadius: 15, marginBottom: 10 },
   citaHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 5 },
   citaCliente: { color: "white", fontSize: 16, fontWeight: "bold" },
-  citaFecha: { color: "#D4AF37", fontSize: 14 },
+  citaFecha: { color: "#C8962A", fontSize: 14 },
   citaDetalle: { color: "#CCC", fontSize: 14, marginTop: 3 },
-  citaEstado: { color: "#D4AF37", fontSize: 13, fontWeight: "bold", marginTop: 5 },
+  citaEstado: { color: "#C8962A", fontSize: 13, fontWeight: "bold", marginTop: 5 },
   estadoConfirmada: { color: "#4CAF50" },
   estadoCancelada: { color: "#999" },
   citaCancelada: { opacity: 0.5 },
   citaAcciones: { flexDirection: "row", justifyContent: "flex-end", gap: 10, marginTop: 10 },
-  btnConfirmar: { backgroundColor: "#2E7D32", paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10 },
-  btnCancelar: { backgroundColor: "#C0392B", paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10 },
+  btnConfirmar: { backgroundColor: "#4CAF50", paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10 },
+  btnCancelar: { backgroundColor: "#9E9E9E", paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10 },
   btnAccionTexto: { color: "white", fontWeight: "bold", fontSize: 14 },
+  passwordHint: { color: "#CCC", fontSize: 14, marginBottom: 15, textAlign: "center" },
+  passwordRow: { width: "100%", flexDirection: "row", alignItems: "stretch", marginBottom: 15 },
+  passwordInput: { backgroundColor: "#2A2A2A", color: "white", padding: 16, borderRadius: 12, fontSize: 16, borderWidth: 1, borderColor: "#333", flex: 1, borderTopRightRadius: 0, borderBottomRightRadius: 0 },
+  passwordEyeBtn: { backgroundColor: "#2A2A2A", paddingHorizontal: 14, borderRadius: 12, borderWidth: 1, borderColor: "#333", borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderLeftWidth: 0, justifyContent: "center", alignItems: "center" },
+  eyeIcon: { width: 24, height: 24, justifyContent: "center", alignItems: "center" },
+  eyeText: { fontSize: 20 },
+  eyeLine: { position: "absolute", width: "100%", height: 2, backgroundColor: "#C8962A", transform: [{ rotate: "-45deg" }] },
+  passwordConfirmBtn: { backgroundColor: "#C8962A", padding: 16, borderRadius: 12, width: "100%", alignItems: "center", elevation: 4, shadowColor: "#C8962A", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.3, shadowRadius: 5 },
+  passwordConfirmText: { color: "#1A1A2E", fontSize: 18, fontWeight: "bold" },
+  passwordBackBtn: { marginTop: 12, alignItems: "center" },
+  passwordBackText: { color: "#C8962A", fontSize: 15, fontWeight: "bold" },
 });

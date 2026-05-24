@@ -1,22 +1,22 @@
-import React from "react";
+import React, { memo } from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 
-export default function TimePicker({ value, onTimeChange }) {
+const TimePicker = memo(function TimePicker({ value, onChange }) {
   const id = "time-picker-input";
 
   const handleChange = (e) => {
-    onTimeChange(e.target.value);
+    onChange(e.target.value);
   };
 
   return (
     <View>
       <TouchableOpacity style={styles.btn} onPress={() => document.getElementById(id)?.showPicker()}>
-        <Text style={styles.btnText}>{value}</Text>
+        <Text style={styles.btnText}>{value || "Seleccionar"}</Text>
       </TouchableOpacity>
       <input
         id={id}
         type="time"
-        value={value}
+        value={value || "09:00"}
         onChange={handleChange}
         style={{
           position: "absolute",
@@ -28,9 +28,11 @@ export default function TimePicker({ value, onTimeChange }) {
       />
     </View>
   );
-}
+});
+
+export default TimePicker;
 
 const styles = StyleSheet.create({
   btn: { backgroundColor: "#2A2A2A", padding: 14, borderRadius: 12, alignItems: "center" },
-  btnText: { color: "#D4AF37", fontSize: 22, fontWeight: "bold" },
+  btnText: { color: "#C8962A", fontSize: 22, fontWeight: "bold" },
 });

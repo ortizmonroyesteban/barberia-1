@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from "react";
-import { View, Text, FlatList, TouchableOpacity, Modal, TextInput, Switch, Alert, StyleSheet, Platform } from "react-native";
+import React, { useEffect, useState, useCallback } from "react";
+import { View, Text, FlatList, TouchableOpacity, Modal, TextInput, Switch, Alert, StyleSheet, Platform, Image, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { supabase } from "../../supabase";
 import { obtenerSillas } from "../../services/sillasService";
+import { ErrorView } from "../../components/LoadingScreen";
 
 export default function AdminBarbersScreen() {
   const navigation = useNavigation();
@@ -16,23 +17,36 @@ export default function AdminBarbersScreen() {
   const [nombreInput, setNombreInput] = useState("");
   const [especialidadInput, setEspecialidadInput] = useState("");
   const [sillaSeleccionada, setSillaSeleccionada] = useState(null);
+  const [fotoUrlInput, setFotoUrlInput] = useState("");
   const [editando, setEditando] = useState(null);
   const [editNombre, setEditNombre] = useState("");
   const [editEspecialidad, setEditEspecialidad] = useState("");
   const [editSillaSeleccionada, setEditSillaSeleccionada] = useState(null);
+  const [editFotoUrl, setEditFotoUrl] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  const cargar = async () => {
-    const [b, s, a] = await Promise.all([
-      supabase.from("barberos").select("id, nombre, activo, admin_activo, especialidad").order("nombre"),
-      obtenerSillas(),
-      supabase.from("barbero_sillas").select("silla_id, barbero_id"),
-    ]);
-    setBarberos(b.data || []);
-    setSillas(s);
-    setAsignaciones(a.data || []);
-  };
+  const cargar = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [b, s, a] = await Promise.all([
+        supabase.from("barberos").select("id, nombre, activo, admin_activo, especialidad, foto_url").order("nombre"),
+        obtenerSillas(),
+        supabase.from("barbero_sillas").select("silla_id, barbero_id"),
+      ]);
+      if (b.error) throw b.error;
+      setBarberos(b.data || []);
+      setSillas(s);
+      setAsignaciones(a.data || []);
+    } catch (e) {
+      setError(e.message || "Error al cargar barberos");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  useEffect(() => { cargar(); }, []);
+  useEffect(() => { cargar(); }, [cargar]);
 
   useEffect(() => {
     const channel = supabase
@@ -43,7 +57,7 @@ export default function AdminBarbersScreen() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-    const sillaBarbero = (barberoId) => {
+  const sillaBarbero = (barberoId) => {
     const asig = asignaciones.find(a => a.barbero_id === barberoId);
     if (!asig) return null;
     return sillas.find(s => s.id === asig.silla_id);
@@ -55,7 +69,7 @@ export default function AdminBarbersScreen() {
     try {
       const { data, error } = await supabase
         .from("barberos")
-        .insert([{ nombre: nombreInput.trim(), especialidad: especialidadInput.trim() || null, activo: true, admin_activo: true }])
+        .insert([{ nombre: nombreInput.trim(), especialidad: especialidadInput.trim() || null, foto_url: fotoUrlInput.trim() || null, activo: true, admin_activo: true }])
         .select();
       if (error) { Alert.alert("Error", error.message); setCargando(false); return; }
       const nuevoBarbero = data?.[0];
@@ -68,6 +82,7 @@ export default function AdminBarbersScreen() {
       setNombreInput("");
       setEspecialidadInput("");
       setSillaSeleccionada(null);
+      setFotoUrlInput("");
       setModalVisible(false);
       await cargar();
     } catch (_) { Alert.alert("Error", "Error de conexión al agregar barbero"); }
@@ -93,6 +108,7 @@ export default function AdminBarbersScreen() {
     setEditEspecialidad(barbero.especialidad || "");
     const asig = asignaciones.find(a => a.barbero_id === barbero.id);
     setEditSillaSeleccionada(asig ? asig.silla_id : null);
+    setEditFotoUrl(barbero.foto_url || "");
     setEditModalVisible(true);
   };
 
@@ -102,7 +118,7 @@ export default function AdminBarbersScreen() {
     try {
       const { error } = await supabase
         .from("barberos")
-        .update({ nombre: editNombre.trim(), especialidad: editEspecialidad.trim() || null })
+        .update({ nombre: editNombre.trim(), especialidad: editEspecialidad.trim() || null, foto_url: editFotoUrl.trim() || null })
         .eq("id", editando.id);
       if (error) { Alert.alert("Error", error.message); setCargando(false); return; }
       const asigActual = asignaciones.find(a => a.barbero_id === editando.id);
@@ -154,6 +170,15 @@ export default function AdminBarbersScreen() {
     const silla = sillaBarbero(item.id);
     return (
       <View style={styles.card}>
+        <View style={styles.fotoWrapper}>
+          {item.foto_url ? (
+            <Image source={{ uri: item.foto_url }} style={styles.foto} />
+          ) : (
+            <View style={styles.fotoPlaceholder}>
+              <Text style={styles.fotoPlaceholderText}>{item.nombre?.charAt(0).toUpperCase() || "?"}</Text>
+            </View>
+          )}
+        </View>
         <View style={styles.cardInfo}>
           <Text style={styles.nombre}>{item.nombre}</Text>
           {item.especialidad ? <Text style={styles.especialidad}>{item.especialidad}</Text> : null}
@@ -169,7 +194,7 @@ export default function AdminBarbersScreen() {
         <Switch
           value={item.admin_activo}
           onValueChange={() => toggleAdminActivo(item)}
-          trackColor={{ false: "#555", true: "#2E7D32" }}
+          trackColor={{ false: "#555", true: "#4CAF50" }}
           thumbColor="white"
         />
         <TouchableOpacity style={styles.editBtn} onPress={() => abrirEditar(item)}>
@@ -184,25 +209,32 @@ export default function AdminBarbersScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-        <Text style={styles.backText}>← Volver</Text>
-      </TouchableOpacity>
+        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.navigate("AdminDashboard")}>
+          <Text style={styles.backText}>← Volver</Text>
+        </TouchableOpacity>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Gestión de Barberos</Text>
       </View>
 
+      {loading ? (
+        <ActivityIndicator size="large" color="#C8962A" style={{ marginTop: 60 }} />
+      ) : error ? (
+        <ErrorView message={error} onRetry={cargar} />
+      ) : (
       <FlatList
         data={barberos}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         contentContainerStyle={styles.list}
+        ListEmptyComponent={<Text style={styles.emptyText}>No hay barberos registrados</Text>}
       />
+      )}
 
       <TouchableOpacity style={styles.fab} onPress={() => setModalVisible(true)}>
         <Text style={styles.fabText}>+</Text>
       </TouchableOpacity>
 
-      <Modal visible={modalVisible} transparent animationType="fade">
+      <Modal visible={modalVisible} transparent animationType="fade" onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modal}>
             <Text style={styles.modalTitle}>Nuevo barbero</Text>
@@ -220,8 +252,29 @@ export default function AdminBarbersScreen() {
               value={especialidadInput}
               onChangeText={setEspecialidadInput}
             />
+            <Text style={styles.pickerLabel}>Silla asignada</Text>
+            <View style={styles.sillaRow}>
+              {sillas.map(s => (
+                <TouchableOpacity
+                  key={s.id}
+                  style={[styles.sillaBtn, sillaSeleccionada === s.id && styles.sillaBtnActive]}
+                  onPress={() => setSillaSeleccionada(sillaSeleccionada === s.id ? null : s.id)}
+                >
+                  <Text style={[styles.sillaBtnText, sillaSeleccionada === s.id && styles.sillaBtnTextActive]}>
+                    {s.numero}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TextInput
+              style={[styles.modalInput, { marginTop: 12 }]}
+              placeholder="URL de la foto (opcional)"
+              placeholderTextColor="#999"
+              value={fotoUrlInput}
+              onChangeText={setFotoUrlInput}
+            />
             <View style={styles.modalBtns}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={() => { setModalVisible(false); setNombreInput(""); setEspecialidadInput(""); }}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => { setModalVisible(false); setNombreInput(""); setEspecialidadInput(""); setSillaSeleccionada(null); setFotoUrlInput(""); }}>
                 <Text style={styles.cancelBtnText}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[styles.saveBtn, cargando && { opacity: 0.5 }]} disabled={cargando} onPress={agregar}>
@@ -232,7 +285,7 @@ export default function AdminBarbersScreen() {
         </View>
       </Modal>
 
-      <Modal visible={editModalVisible} transparent animationType="fade">
+      <Modal visible={editModalVisible} transparent animationType="fade" onRequestClose={() => setEditModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modal}>
             <Text style={styles.modalTitle}>Editar barbero</Text>
@@ -264,6 +317,13 @@ export default function AdminBarbersScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+            <TextInput
+              style={[styles.modalInput, { marginTop: 12 }]}
+              placeholder="URL de la foto (opcional)"
+              placeholderTextColor="#999"
+              value={editFotoUrl}
+              onChangeText={setEditFotoUrl}
+            />
             <View style={styles.modalBtns}>
               <TouchableOpacity style={styles.cancelBtn} onPress={() => { setEditModalVisible(false); setEditando(null); }}>
                 <Text style={styles.cancelBtnText}>Cancelar</Text>
@@ -280,13 +340,14 @@ export default function AdminBarbersScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#121212" },
-  backBtn: { paddingHorizontal: 20, paddingBottom: 10 },
-  backText: { color: "#D4AF37", fontSize: 18, fontWeight: "bold" },
-  header: { paddingHorizontal: 20, paddingTop: 0, paddingBottom: 15, backgroundColor: "#1E1E1E", borderBottomLeftRadius: 25, borderBottomRightRadius: 25 },
-  headerTitle: { color: "#D4AF37", fontSize: 20, fontWeight: "bold" },
+  container: { flex: 1, backgroundColor: "#1A1A2E" },
+  backBtn: { paddingHorizontal: 20, paddingVertical: 10 },
+  backText: { color: "#C8962A", fontSize: 18, fontWeight: "bold" },
+  header: { paddingHorizontal: 20, paddingTop: 0, paddingBottom: 15, backgroundColor: "#1E1E1E", borderBottomLeftRadius: 25, borderBottomRightRadius: 25, elevation: 4, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4 },
+  headerTitle: { color: "#C8962A", fontSize: 20, fontWeight: "bold" },
   list: { padding: 15, paddingBottom: 80 },
-  card: { backgroundColor: "#1E1E1E", flexDirection: "row", alignItems: "center", padding: 15, borderRadius: 15, marginBottom: 10 },
+  emptyText: { color: "#999", textAlign: "center", marginTop: 40, fontSize: 15 },
+  card: { backgroundColor: "#1E1E1E", flexDirection: "row", alignItems: "center", padding: 15, borderRadius: 16, marginBottom: 10, elevation: 3, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4 },
   cardInfo: { flex: 1, marginLeft: 5 },
   nombre: { color: "white", fontSize: 17, fontWeight: "bold" },
   especialidad: { color: "#CCC", fontSize: 13, marginTop: 2 },
@@ -296,21 +357,25 @@ const styles = StyleSheet.create({
   editBtnText: { fontSize: 20 },
   deleteBtn: { marginLeft: 8 },
   deleteBtnText: { fontSize: 20 },
-  fab: { position: "absolute", bottom: 25, right: 20, backgroundColor: "#D4AF37", width: 60, height: 60, borderRadius: 30, justifyContent: "center", alignItems: "center", elevation: 6, zIndex: 10 },
-  fabText: { color: "#121212", fontSize: 30, fontWeight: "bold", marginTop: -2 },
+  fab: { position: "absolute", bottom: 25, right: 20, backgroundColor: "#C8962A", width: 60, height: 60, borderRadius: 30, justifyContent: "center", alignItems: "center", elevation: 8, shadowColor: "#C8962A", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 6, zIndex: 10 },
+  fabText: { color: "#1A1A2E", fontSize: 30, fontWeight: "bold", marginTop: -2 },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", padding: 30 },
-  modal: { backgroundColor: "#1E1E1E", borderRadius: 25, padding: 25 },
-  modalTitle: { color: "#D4AF37", fontSize: 22, fontWeight: "bold", marginBottom: 20, textAlign: "center" },
-  modalInput: { backgroundColor: "#2A2A2A", color: "white", padding: 15, borderRadius: 12, fontSize: 16 },
+  modal: { backgroundColor: "#1E1E1E", borderRadius: 25, padding: 25, elevation: 8, shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 8 },
+  modalTitle: { color: "#C8962A", fontSize: 22, fontWeight: "bold", marginBottom: 20, textAlign: "center" },
+  modalInput: { backgroundColor: "#2A2A2A", color: "white", padding: 15, borderRadius: 12, fontSize: 16, borderWidth: 1, borderColor: "#333" },
   pickerLabel: { color: "#CCC", fontSize: 14, fontWeight: "bold", marginTop: 15, marginBottom: 8 },
   sillaRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   sillaBtn: { backgroundColor: "#333", paddingHorizontal: 18, paddingVertical: 12, borderRadius: 12, borderWidth: 2, borderColor: "transparent" },
-  sillaBtnActive: { borderColor: "#D4AF37", backgroundColor: "#2A2A2A" },
+  sillaBtnActive: { borderColor: "#C8962A", backgroundColor: "#2A2A2A" },
   sillaBtnText: { color: "#999", fontSize: 16, fontWeight: "bold" },
-  sillaBtnTextActive: { color: "#D4AF37" },
+  sillaBtnTextActive: { color: "#C8962A" },
   modalBtns: { flexDirection: "row", justifyContent: "space-between", marginTop: 24 },
-  cancelBtn: { backgroundColor: "#555", padding: 12, borderRadius: 12, flex: 1, marginRight: 10, alignItems: "center" },
+  cancelBtn: { backgroundColor: "#555", padding: 14, borderRadius: 12, flex: 1, marginRight: 10, alignItems: "center" },
   cancelBtnText: { color: "white", fontWeight: "bold" },
-  saveBtn: { backgroundColor: "#D4AF37", padding: 12, borderRadius: 12, flex: 1, marginLeft: 10, alignItems: "center" },
-  saveBtnText: { color: "#121212", fontWeight: "bold" },
+  saveBtn: { backgroundColor: "#C8962A", padding: 14, borderRadius: 12, flex: 1, marginLeft: 10, alignItems: "center", elevation: 3, shadowColor: "#C8962A", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4 },
+  saveBtnText: { color: "#1A1A2E", fontWeight: "bold" },
+  fotoWrapper: { marginRight: 12 },
+  foto: { width: 50, height: 50, borderRadius: 8, borderWidth: 2, borderColor: "#C8962A" },
+  fotoPlaceholder: { width: 50, height: 50, borderRadius: 8, backgroundColor: "#C8962A", justifyContent: "center", alignItems: "center", borderWidth: 2, borderColor: "rgba(255,255,255,0.3)" },
+  fotoPlaceholderText: { color: "white", fontSize: 22, fontWeight: "bold" },
 });

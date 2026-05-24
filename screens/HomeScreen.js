@@ -1,133 +1,141 @@
-import React, { useEffect, useState } from "react";
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, StatusBar } from "react-native";
+import React, { useEffect, useState, useCallback } from "react";
+import { View, Text, TouchableOpacity, FlatList, Image, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { supabase } from "../supabase";
 import { obtenerSillasConBarbero } from "../services/sillasService";
 
-const iniciales = (nombre) =>
-  nombre ? nombre.split(" ").map(p => p[0]).join("").slice(0, 2).toUpperCase() : "?";
+const keyExtractor = (item) => item.id;
 
 export default function HomeScreen() {
   const navigation = useNavigation();
   const [sillas, setSillas] = useState([]);
 
-  const cargar = () => {
-    obtenerSillasConBarbero().then(setSillas).catch(() => {});
-  };
+  const cargar = useCallback(async () => {
+    const data = await obtenerSillasConBarbero();
+    setSillas(data || []);
+  }, []);
 
-  useEffect(() => { cargar(); }, []);
+  useEffect(() => { cargar(); }, [cargar]);
 
   useEffect(() => {
     const channel = supabase
       .channel("home-sillas")
+      .on("postgres_changes", { event: "*", schema: "public", table: "sillas" }, cargar)
       .on("postgres_changes", { event: "*", schema: "public", table: "barberos" }, cargar)
       .on("postgres_changes", { event: "*", schema: "public", table: "barbero_sillas" }, cargar)
-      .on("postgres_changes", { event: "*", schema: "public", table: "sillas" }, cargar)
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, []);
+  }, [cargar]);
+
+  const goToAdmin = useCallback(() => navigation.navigate("AdminLogin"), [navigation]);
+  const goToBarberPanel = useCallback(() => navigation.navigate("BarberPanel"), [navigation]);
+
+  const renderItem = useCallback(({ item }) => {
+    const ocupada = item.barbero && item.barbero.admin_activo && item.barbero.activo;
+    return (
+      <TouchableOpacity
+        style={styles.card}
+        onPress={() => {
+          if (ocupada) navigation.navigate("BarberDetail", { silla: item });
+        }}
+      >
+        <View style={[styles.sillaNum, ocupada ? styles.sillaNumActive : styles.sillaNumDisabled]}>
+          <Text style={styles.sillaNumText}>{item.numero}</Text>
+        </View>
+        <View style={styles.cardInfo}>
+          <Text style={styles.cardSilla}>💺 Silla {item.numero}</Text>
+          {item.barbero ? (
+            <View style={styles.cardBarberoRow}>
+              {item.barbero.foto_url ? (
+                <Image source={{ uri: item.barbero.foto_url }} style={styles.cardBarberoFoto} />
+              ) : (
+                <View style={styles.cardBarberoAvatar}>
+                  <Text style={styles.cardBarberoAvatarText}>{item.barbero.nombre?.charAt(0).toUpperCase() || "?"}</Text>
+                </View>
+              )}
+              <Text style={styles.cardName}>
+                {item.barbero.admin_activo && item.barbero.activo
+                  ? item.barbero.nombre
+                  : `${item.barbero.nombre} (no disponible)`}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+        <View style={[styles.badge, ocupada ? styles.badgeDisponible : styles.badgeNoDisponible]}>
+          <Text style={styles.badgeText}>{ocupada ? "Disponible" : "No disponible"}</Text>
+        </View>
+      </TouchableOpacity>
+    );
+  }, [navigation]);
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" />
-
       <View style={styles.header}>
-        <View style={styles.headerTop}>
-          <Text style={styles.headerTitle}>Tauros Barbería</Text>
-          <TouchableOpacity style={styles.adminBtn} onPress={() => navigation.navigate("AdminLogin")}>
-            <Text style={styles.adminBtnText}>Admin</Text>
-          </TouchableOpacity>
-        </View>
+        <Text style={styles.headerTitle}>Tauro's Barbería</Text>
+        <TouchableOpacity style={styles.adminBtn} onPress={goToAdmin}>
+          <Text style={styles.adminBtnText}>Admin</Text>
+        </TouchableOpacity>
       </View>
 
       <View style={styles.hero}>
-        <Text style={styles.heroEmoji}>🦌</Text>
-        <Text style={styles.heroTitle}>Tauros Barbería</Text>
-        <Text style={styles.heroSubtitle}>Estilo y tradición en cada corte</Text>
-        <Text style={styles.heroHint}>Toca una silla para agendar tu cita</Text>
+        <Image source={require("../assets/logo.png")} style={styles.logo} />
+        <Text style={styles.heroTitle}>Bienvenido</Text>
+        <Text style={styles.heroSubtitle}>Elige tu barbero y reserva tu cita</Text>
+        <Text style={styles.heroHint}>Selecciona una silla para empezar</Text>
       </View>
 
       <View style={styles.listSection}>
         <FlatList
           data={sillas}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => {
-            const tieneBarbero = !!item.barbero;
-            const barberoActivo = tieneBarbero && item.barbero.activo;
-            const disponible = barberoActivo;
-            return (
-              <TouchableOpacity
-                style={styles.card}
-                onPress={() => {
-                  if (!disponible) return;
-                  navigation.navigate("BarberDetail", { silla: item, barbero: item.barbero });
-                }}
-                activeOpacity={disponible ? 0.7 : 1}
-              >
-                <View style={[styles.sillaNum, !disponible && styles.sillaNumDisabled]}>
-                  <Text style={styles.sillaNumText}>{item.numero}</Text>
-                </View>
-                <View style={styles.cardInfo}>
-                  <Text style={styles.cardSilla}>Silla {item.numero}</Text>
-                  <Text style={styles.cardName}>
-                    {tieneBarbero ? item.barbero.nombre : "Sin barbero asignado"}
-                  </Text>
-                </View>
-                <View style={[styles.badge, disponible ? styles.badgeDisponible : styles.badgeNoDisponible]}>
-                  <Text style={styles.badgeText}>
-                    {disponible ? "Disponible" : "No disponible"}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            );
-          }}
-          ListEmptyComponent={
-            <Text style={styles.emptyText}>No hay sillas registradas</Text>
-          }
+          keyExtractor={keyExtractor}
+          renderItem={renderItem}
+          contentContainerStyle={styles.listContent}
+          ListEmptyComponent={<Text style={styles.emptyText}>No hay sillas disponibles</Text>}
+          windowSize={5}
         />
       </View>
 
-      <TouchableOpacity
-        style={styles.barberPanelBtn}
-        onPress={() => navigation.navigate("BarberPanel")}
-      >
-        <Text style={styles.barberPanelText}>🔐 Acceso barberos</Text>
+      <TouchableOpacity style={styles.barberPanelBtn} onPress={goToBarberPanel}>
+        <Text style={styles.barberPanelBtnText}>Panel de barberos</Text>
       </TouchableOpacity>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#121212" },
-  header: { backgroundColor: "#1E1E1E", paddingBottom: 15, paddingHorizontal: 20, borderBottomLeftRadius: 25, borderBottomRightRadius: 25 },
-  headerTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  headerTitle: { color: "#D4AF37", fontSize: 22, fontWeight: "bold" },
-  adminBtn: { backgroundColor: "#D4AF37", paddingHorizontal: 14, paddingVertical: 6, borderRadius: 8 },
-  adminBtnText: { color: "#121212", fontSize: 14, fontWeight: "bold" },
+  container: { flex: 1, backgroundColor: "#1A1A2E" },
+  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: "#1E1E1E", paddingHorizontal: 20, paddingVertical: 16, borderBottomLeftRadius: 25, borderBottomRightRadius: 25, elevation: 4, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4 },
+  headerTitle: { color: "#C8962A", fontSize: 22, fontWeight: "bold" },
+  adminBtn: { backgroundColor: "#C8962A", paddingHorizontal: 18, paddingVertical: 8, borderRadius: 10, elevation: 2, shadowColor: "#C8962A", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 3 },
+  adminBtnText: { color: "#1A1A2E", fontSize: 14, fontWeight: "bold" },
 
-  hero: { alignItems: "center", paddingVertical: 30, marginHorizontal: 15, backgroundColor: "#1E1E1E", borderRadius: 25, marginTop: 20 },
-  heroEmoji: { fontSize: 60 },
-  heroTitle: { color: "#D4AF37", fontSize: 28, fontWeight: "bold", marginTop: 10 },
-  heroSubtitle: { color: "#CCC", fontSize: 16, marginTop: 5 },
-  heroHint: { color: "#999", fontSize: 14, marginTop: 15, fontStyle: "italic" },
+  hero: { alignItems: "center", paddingVertical: 30, marginHorizontal: 15, backgroundColor: "#1E1E1E", borderRadius: 25, marginTop: 20, elevation: 3, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4 },
+  logo: { width: 180, height: 180, borderRadius: 20, marginBottom: 10 },
+  heroTitle: { color: "#C8962A", fontSize: 28, fontWeight: "bold", marginTop: 8 },
+  heroSubtitle: { color: "#CCC", fontSize: 16, marginTop: 4 },
+  heroHint: { color: "#999", fontSize: 14, fontStyle: "italic", marginTop: 8 },
 
   listSection: { paddingHorizontal: 15, marginTop: 20, flex: 1 },
-
-  card: { backgroundColor: "#1E1E1E", flexDirection: "row", alignItems: "center", padding: 15, borderRadius: 15, marginBottom: 12 },
-  sillaNum: { width: 50, height: 50, borderRadius: 12, backgroundColor: "#2E7D32", justifyContent: "center", alignItems: "center" },
+  card: { backgroundColor: "#1E1E1E", flexDirection: "row", alignItems: "center", padding: 18, borderRadius: 18, marginBottom: 12, elevation: 3, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4 },
+  sillaNum: { width: 50, height: 50, borderRadius: 14, justifyContent: "center", alignItems: "center" },
+  sillaNumActive: { backgroundColor: "#4CAF50" },
   sillaNumDisabled: { backgroundColor: "#555" },
   sillaNumText: { color: "white", fontSize: 20, fontWeight: "bold" },
   cardInfo: { flex: 1, marginLeft: 15 },
-  cardSilla: { color: "#D4AF37", fontSize: 14, fontWeight: "bold" },
-  cardName: { color: "white", fontSize: 15, marginTop: 2 },
-  badge: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20 },
-  badgeDisponible: { backgroundColor: "#1B5E20" },
+  cardSilla: { color: "#C8962A", fontSize: 14, fontWeight: "bold" },
+  cardBarberoRow: { flexDirection: "row", alignItems: "center", marginTop: 4 },
+  cardBarberoFoto: { width: 40, height: 40, borderRadius: 8, marginRight: 10, borderWidth: 2, borderColor: "#C8962A" },
+  cardBarberoAvatar: { width: 40, height: 40, borderRadius: 8, backgroundColor: "#C8962A", justifyContent: "center", alignItems: "center", marginRight: 10, borderWidth: 2, borderColor: "rgba(255,255,255,0.3)" },
+  cardBarberoAvatarText: { color: "white", fontSize: 18, fontWeight: "bold" },
+  cardName: { color: "white", fontSize: 15 },
+  badge: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20 },
+  badgeDisponible: { backgroundColor: "#4CAF50" },
   badgeNoDisponible: { backgroundColor: "#555" },
   badgeText: { color: "white", fontSize: 12, fontWeight: "bold" },
-
+  listContent: { paddingBottom: 10 },
   emptyText: { color: "#999", textAlign: "center", marginTop: 20 },
 
-  barberPanelBtn: { backgroundColor: "#333", marginHorizontal: 15, marginVertical: 15, padding: 15, borderRadius: 12, alignItems: "center" },
-  barberPanelText: { color: "white", fontWeight: "bold", fontSize: 16 },
+  barberPanelBtn: { marginHorizontal: 15, marginVertical: 15, backgroundColor: "#2A2A2A", padding: 16, borderRadius: 14, alignItems: "center", borderWidth: 1, borderColor: "#333" },
+  barberPanelBtnText: { color: "#C8962A", textAlign: "center", fontWeight: "bold", fontSize: 15 },
 });

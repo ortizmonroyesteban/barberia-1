@@ -9,3 +9,6 @@ export const horas = [
   "17:00",
   "18:00",
 ];
+
+export const fechaLocal = (fecha = new Date()) =>
+  fecha.getFullYear() + "-" + String(fecha.getMonth() + 1).padStart(2, "0") + "-" + String(fecha.getDate()).padStart(2, "0");
