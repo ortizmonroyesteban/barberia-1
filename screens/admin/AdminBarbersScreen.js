@@ -1,13 +1,14 @@
-import React, { useEffect, useState, useCallback } from "react";
-import { View, Text, FlatList, TouchableOpacity, Modal, TextInput, Switch, Alert, StyleSheet, Platform, Image, ActivityIndicator } from "react-native";
+import React, { useEffect, useState } from "react";
+import { View, Text, FlatList, TouchableOpacity, Modal, TextInput, Switch, StyleSheet, Platform, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { supabase } from "../../supabase";
 import { obtenerSillas } from "../../services/sillasService";
-import { ErrorView } from "../../components/LoadingScreen";
+import { useAlert } from "../../components/CustomAlert";
 
 export default function AdminBarbersScreen() {
   const navigation = useNavigation();
+  const { showAlert } = useAlert();
   const [barberos, setBarberos] = useState([]);
   const [sillas, setSillas] = useState([]);
   const [asignaciones, setAsignaciones] = useState([]);
@@ -23,30 +24,21 @@ export default function AdminBarbersScreen() {
   const [editEspecialidad, setEditEspecialidad] = useState("");
   const [editSillaSeleccionada, setEditSillaSeleccionada] = useState(null);
   const [editFotoUrl, setEditFotoUrl] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [telefonoInput, setTelefonoInput] = useState("");
+  const [editTelefono, setEditTelefono] = useState("");
 
-  const cargar = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [b, s, a] = await Promise.all([
-        supabase.from("barberos").select("id, nombre, activo, admin_activo, especialidad, foto_url").order("nombre"),
-        obtenerSillas(),
-        supabase.from("barbero_sillas").select("silla_id, barbero_id"),
-      ]);
-      if (b.error) throw b.error;
-      setBarberos(b.data || []);
-      setSillas(s);
-      setAsignaciones(a.data || []);
-    } catch (e) {
-      setError(e.message || "Error al cargar barberos");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const cargar = async () => {
+    const [b, s, a] = await Promise.all([
+      supabase.from("barberos").select("id, nombre, activo, admin_activo, especialidad, foto_url, telefono").order("nombre"),
+      obtenerSillas(),
+      supabase.from("barbero_sillas").select("silla_id, barbero_id"),
+    ]);
+    setBarberos(b.data || []);
+    setSillas(s);
+    setAsignaciones(a.data || []);
+  };
 
-  useEffect(() => { cargar(); }, [cargar]);
+  useEffect(() => { cargar(); }, []);
 
   useEffect(() => {
     const channel = supabase
@@ -64,14 +56,14 @@ export default function AdminBarbersScreen() {
   };
 
   const agregar = async () => {
-    if (!nombreInput.trim()) { Alert.alert("Error", "Ingresa el nombre"); return; }
+    if (!nombreInput.trim()) { showAlert("Error", "Ingresa el nombre"); return; }
     setCargando(true);
     try {
       const { data, error } = await supabase
         .from("barberos")
-        .insert([{ nombre: nombreInput.trim(), especialidad: especialidadInput.trim() || null, foto_url: fotoUrlInput.trim() || null, activo: true, admin_activo: true }])
+        .insert([{ nombre: nombreInput.trim(), especialidad: especialidadInput.trim() || null, foto_url: fotoUrlInput.trim() || null, telefono: telefonoInput.trim() || null, activo: true, admin_activo: true }])
         .select();
-      if (error) { Alert.alert("Error", error.message); setCargando(false); return; }
+      if (error) { showAlert("Error", error.message); setCargando(false); return; }
       const nuevoBarbero = data?.[0];
       if (nuevoBarbero && sillaSeleccionada) {
         const { data: actual } = await supabase.from("barbero_sillas").select("barbero_id").eq("silla_id", sillaSeleccionada).maybeSingle();
@@ -85,7 +77,7 @@ export default function AdminBarbersScreen() {
       setFotoUrlInput("");
       setModalVisible(false);
       await cargar();
-    } catch (_) { Alert.alert("Error", "Error de conexión al agregar barbero"); }
+    } catch (_) { showAlert("Error", "Error de conexión al agregar barbero"); }
     setCargando(false);
   };
 
@@ -109,18 +101,19 @@ export default function AdminBarbersScreen() {
     const asig = asignaciones.find(a => a.barbero_id === barbero.id);
     setEditSillaSeleccionada(asig ? asig.silla_id : null);
     setEditFotoUrl(barbero.foto_url || "");
+    setEditTelefono(barbero.telefono || "");
     setEditModalVisible(true);
   };
 
   const guardarEdicion = async () => {
-    if (!editNombre.trim()) { Alert.alert("Error", "El nombre no puede estar vacío"); return; }
+    if (!editNombre.trim()) { showAlert("Error", "El nombre no puede estar vacío"); return; }
     setCargando(true);
     try {
       const { error } = await supabase
         .from("barberos")
-        .update({ nombre: editNombre.trim(), especialidad: editEspecialidad.trim() || null, foto_url: editFotoUrl.trim() || null })
+        .update({ nombre: editNombre.trim(), especialidad: editEspecialidad.trim() || null, foto_url: editFotoUrl.trim() || null, telefono: editTelefono.trim() || null })
         .eq("id", editando.id);
-      if (error) { Alert.alert("Error", error.message); setCargando(false); return; }
+      if (error) { showAlert("Error", error.message); setCargando(false); return; }
       const asigActual = asignaciones.find(a => a.barbero_id === editando.id);
       if (editSillaSeleccionada !== (asigActual?.silla_id || null)) {
         if (asigActual) {
@@ -137,23 +130,22 @@ export default function AdminBarbersScreen() {
       setEditModalVisible(false);
       setEditando(null);
       await cargar();
-    } catch (_) { Alert.alert("Error", "Error de conexión al guardar"); }
+    } catch (_) { showAlert("Error", "Error de conexión al guardar"); }
     setCargando(false);
   };
 
-  const confirmarEliminar = () => {
-    if (Platform.OS === "web") return window.confirm("¿Eliminar este barbero y todas sus citas?");
-    return new Promise(resolve => {
-      Alert.alert("Eliminar", "¿Eliminar este barbero y todas sus citas?", [
-        { text: "Cancelar", onPress: () => resolve(false) },
-        { text: "Eliminar", onPress: () => resolve(true) },
-      ]);
-    });
+  const confirmarEliminar = (id) => {
+    if (Platform.OS === "web") {
+      if (window.confirm("¿Eliminar este barbero y todas sus citas?")) ejecutarEliminar(id);
+      return;
+    }
+    showAlert("Eliminar", "¿Eliminar este barbero y todas sus citas?", [
+      { text: "Cancelar" },
+      { text: "Eliminar", onPress: () => ejecutarEliminar(id) },
+    ]);
   };
 
-  const eliminar = async (id) => {
-    const confirmado = await confirmarEliminar();
-    if (!confirmado) return;
+  const ejecutarEliminar = async (id) => {
     setCargando(true);
     try {
       const { data: asigs } = await supabase.from("barbero_sillas").select("silla_id").eq("barbero_id", id);
@@ -162,7 +154,7 @@ export default function AdminBarbersScreen() {
       await supabase.from("barberos").delete().eq("id", id);
       if (asigs) for (const a of asigs) await supabase.from("sillas").update({ estado: "libre" }).eq("id", a.silla_id);
       await cargar();
-    } catch (_) { Alert.alert("Error", "Error de conexión al eliminar"); }
+    } catch (_) { showAlert("Error", "Error de conexión al eliminar"); }
     setCargando(false);
   };
 
@@ -200,7 +192,7 @@ export default function AdminBarbersScreen() {
         <TouchableOpacity style={styles.editBtn} onPress={() => abrirEditar(item)}>
           <Text style={styles.editBtnText}>✏️</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.deleteBtn} onPress={() => eliminar(item.id)}>
+        <TouchableOpacity style={styles.deleteBtn} onPress={() => confirmarEliminar(item.id)}>
           <Text style={styles.deleteBtnText}>🗑️</Text>
         </TouchableOpacity>
       </View>
@@ -216,19 +208,12 @@ export default function AdminBarbersScreen() {
         <Text style={styles.headerTitle}>Gestión de Barberos</Text>
       </View>
 
-      {loading ? (
-        <ActivityIndicator size="large" color="#C8962A" style={{ marginTop: 60 }} />
-      ) : error ? (
-        <ErrorView message={error} onRetry={cargar} />
-      ) : (
       <FlatList
         data={barberos}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         contentContainerStyle={styles.list}
-        ListEmptyComponent={<Text style={styles.emptyText}>No hay barberos registrados</Text>}
       />
-      )}
 
       <TouchableOpacity style={styles.fab} onPress={() => setModalVisible(true)}>
         <Text style={styles.fabText}>+</Text>
@@ -266,15 +251,30 @@ export default function AdminBarbersScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+            <View style={[styles.fotoUrlRow, { marginTop: 12 }]}>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="URL de la foto (opcional)"
+                placeholderTextColor="#999"
+                value={fotoUrlInput}
+                onChangeText={setFotoUrlInput}
+              />
+              {fotoUrlInput ? (
+                <TouchableOpacity style={styles.clearBtn} onPress={() => setFotoUrlInput("")}>
+                  <Text style={styles.clearBtnText}>✕</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
             <TextInput
               style={[styles.modalInput, { marginTop: 12 }]}
-              placeholder="URL de la foto (opcional)"
+              placeholder="Teléfono (opcional)"
               placeholderTextColor="#999"
-              value={fotoUrlInput}
-              onChangeText={setFotoUrlInput}
+              keyboardType="phone-pad"
+              value={telefonoInput}
+              onChangeText={setTelefonoInput}
             />
             <View style={styles.modalBtns}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={() => { setModalVisible(false); setNombreInput(""); setEspecialidadInput(""); setSillaSeleccionada(null); setFotoUrlInput(""); }}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => { setModalVisible(false); setNombreInput(""); setEspecialidadInput(""); setSillaSeleccionada(null); setFotoUrlInput(""); setTelefonoInput(""); }}>
                 <Text style={styles.cancelBtnText}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[styles.saveBtn, cargando && { opacity: 0.5 }]} disabled={cargando} onPress={agregar}>
@@ -317,12 +317,27 @@ export default function AdminBarbersScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+            <View style={[styles.fotoUrlRow, { marginTop: 12 }]}>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="URL de la foto (opcional)"
+                placeholderTextColor="#999"
+                value={editFotoUrl}
+                onChangeText={setEditFotoUrl}
+              />
+              {editFotoUrl ? (
+                <TouchableOpacity style={styles.clearBtn} onPress={() => setEditFotoUrl("")}>
+                  <Text style={styles.clearBtnText}>✕</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
             <TextInput
               style={[styles.modalInput, { marginTop: 12 }]}
-              placeholder="URL de la foto (opcional)"
+              placeholder="Teléfono (opcional)"
               placeholderTextColor="#999"
-              value={editFotoUrl}
-              onChangeText={setEditFotoUrl}
+              keyboardType="phone-pad"
+              value={editTelefono}
+              onChangeText={setEditTelefono}
             />
             <View style={styles.modalBtns}>
               <TouchableOpacity style={styles.cancelBtn} onPress={() => { setEditModalVisible(false); setEditando(null); }}>
@@ -346,7 +361,6 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: 20, paddingTop: 0, paddingBottom: 15, backgroundColor: "#1E1E1E", borderBottomLeftRadius: 25, borderBottomRightRadius: 25, elevation: 4, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4 },
   headerTitle: { color: "#C8962A", fontSize: 20, fontWeight: "bold" },
   list: { padding: 15, paddingBottom: 80 },
-  emptyText: { color: "#999", textAlign: "center", marginTop: 40, fontSize: 15 },
   card: { backgroundColor: "#1E1E1E", flexDirection: "row", alignItems: "center", padding: 15, borderRadius: 16, marginBottom: 10, elevation: 3, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4 },
   cardInfo: { flex: 1, marginLeft: 5 },
   nombre: { color: "white", fontSize: 17, fontWeight: "bold" },
@@ -378,4 +392,8 @@ const styles = StyleSheet.create({
   foto: { width: 50, height: 50, borderRadius: 8, borderWidth: 2, borderColor: "#C8962A" },
   fotoPlaceholder: { width: 50, height: 50, borderRadius: 8, backgroundColor: "#C8962A", justifyContent: "center", alignItems: "center", borderWidth: 2, borderColor: "rgba(255,255,255,0.3)" },
   fotoPlaceholderText: { color: "white", fontSize: 22, fontWeight: "bold" },
+
+  fotoUrlRow: { flexDirection: "row", alignItems: "center" },
+  clearBtn: { marginLeft: 8, backgroundColor: "#555", width: 44, height: 44, borderRadius: 12, justifyContent: "center", alignItems: "center" },
+  clearBtnText: { color: "#CCC", fontSize: 18, fontWeight: "bold" },
 });

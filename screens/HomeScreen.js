@@ -30,6 +30,7 @@ export default function HomeScreen() {
 
   const goToAdmin = useCallback(() => navigation.navigate("AdminLogin"), [navigation]);
   const goToBarberPanel = useCallback(() => navigation.navigate("BarberPanel"), [navigation]);
+  const goToMyBookings = useCallback(() => navigation.navigate("MyBookings"), [navigation]);
 
   const renderItem = useCallback(({ item }) => {
     const ocupada = item.barbero && item.barbero.admin_activo && item.barbero.activo;
@@ -44,7 +45,7 @@ export default function HomeScreen() {
           <Text style={styles.sillaNumText}>{item.numero}</Text>
         </View>
         <View style={styles.cardInfo}>
-          <Text style={styles.cardSilla}>💺 Silla {item.numero}</Text>
+          <Text style={styles.cardSilla}>Silla {item.numero}</Text>
           {item.barbero ? (
             <View style={styles.cardBarberoRow}>
               {item.barbero.foto_url ? (
@@ -73,9 +74,14 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Tauro's Barbería</Text>
-        <TouchableOpacity style={styles.adminBtn} onPress={goToAdmin}>
-          <Text style={styles.adminBtnText}>Admin</Text>
-        </TouchableOpacity>
+        <View style={styles.headerBtns}>
+          <TouchableOpacity style={styles.myBookingsBtn} onPress={goToMyBookings}>
+            <Text style={styles.myBookingsBtnText}>Mis citas</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.adminBtn} onPress={goToAdmin}>
+            <Text style={styles.adminBtnText}>Admin</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.hero}>
@@ -107,8 +113,11 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#1A1A2E" },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: "#1E1E1E", paddingHorizontal: 20, paddingVertical: 16, borderBottomLeftRadius: 25, borderBottomRightRadius: 25, elevation: 4, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4 },
   headerTitle: { color: "#C8962A", fontSize: 22, fontWeight: "bold" },
-  adminBtn: { backgroundColor: "#C8962A", paddingHorizontal: 18, paddingVertical: 8, borderRadius: 10, elevation: 2, shadowColor: "#C8962A", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 3 },
-  adminBtnText: { color: "#1A1A2E", fontSize: 14, fontWeight: "bold" },
+  headerBtns: { flexDirection: "row", gap: 8 },
+  adminBtn: { backgroundColor: "#C8962A", paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, elevation: 2, shadowColor: "#C8962A", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 3 },
+  adminBtnText: { color: "#1A1A2E", fontSize: 13, fontWeight: "bold" },
+  myBookingsBtn: { backgroundColor: "#2A2A2A", paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: "#C8962A" },
+  myBookingsBtnText: { color: "#C8962A", fontSize: 13, fontWeight: "bold" },
 
   hero: { alignItems: "center", paddingVertical: 30, marginHorizontal: 15, backgroundColor: "#1E1E1E", borderRadius: 25, marginTop: 20, elevation: 3, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4 },
   logo: { width: 180, height: 180, borderRadius: 20, marginBottom: 10 },

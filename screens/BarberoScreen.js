@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
-import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ScrollView, Image, KeyboardAvoidingView, Platform } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Image, KeyboardAvoidingView, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { supabase } from "../supabase";
 import { fechaLocal } from "../utils/horarios";
+import { useAlert } from "../components/CustomAlert";
 
 import { obtenerBarberos } from "../services/barberosService";
 import { obtenerSillas } from "../services/sillasService";
@@ -11,6 +12,7 @@ import { obtenerTodasLasAsignaciones, asignarSilla, desasignarSilla } from "../s
 
 export default function BarberoScreen() {
   const navigation = useNavigation();
+  const { showAlert } = useAlert();
   const [paso, setPaso] = useState("login");
   const [barberos, setBarberos] = useState([]);
   const [sillas, setSillas] = useState([]);
@@ -21,6 +23,7 @@ export default function BarberoScreen() {
   const [passwordInput, setPasswordInput] = useState("");
   const [selectedBarber, setSelectedBarber] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [telefonoInput, setTelefonoInput] = useState("");
 
   const BARBER_PASSWORD = "barbero123";
 
@@ -58,8 +61,8 @@ export default function BarberoScreen() {
       .on("postgres_changes", { event: "*", schema: "public", table: "barberos" }, async () => {
         const b = barberoRef.current;
         if (b) {
-          const { data } = await supabase.from("barberos").select("id, nombre, activo, admin_activo, especialidad, foto_url").eq("id", b.id).single();
-          if (data) setBarbero(data);
+          const { data } = await supabase.from("barberos").select("id, nombre, activo, admin_activo, especialidad, foto_url, telefono").eq("id", b.id).single();
+          if (data) { setBarbero(data); if (!telefonoInput && data.telefono) setTelefonoInput(data.telefono); }
         }
         const d = await obtenerBarberos();
         setBarberos(d);
@@ -85,8 +88,8 @@ export default function BarberoScreen() {
   const entrar = async (b) => {
     setCargando(true);
     try {
-      const { data } = await supabase.from("barberos").select("id, nombre, activo, admin_activo, especialidad, foto_url").eq("id", b.id).single();
-      if (data) setBarbero(data);
+      const { data } = await supabase.from("barberos").select("id, nombre, activo, admin_activo, especialidad, foto_url, telefono").eq("id", b.id).single();
+      if (data) { setBarbero(data); setTelefonoInput(data.telefono || ""); }
       else setBarbero(b);
       const s = await obtenerSillas();
       setSillas(s);
@@ -102,7 +105,7 @@ export default function BarberoScreen() {
 
   const verificarPassword = () => {
     if (passwordInput.trim() !== BARBER_PASSWORD) {
-      Alert.alert("Error", "Contraseña incorrecta");
+      showAlert("Error", "Contraseña incorrecta");
       setPasswordInput("");
       return;
     }
@@ -134,7 +137,7 @@ export default function BarberoScreen() {
 
   const toggleActivo = async () => {
     if (!barbero.admin_activo) {
-      Alert.alert("Bloqueado", "El administrador te ha desactivado. No puedes cambiarlo.");
+      showAlert("Bloqueado", "El administrador te ha desactivado. No puedes cambiarlo.");
       return;
     }
     setCargando(true);
@@ -151,6 +154,16 @@ export default function BarberoScreen() {
       }
       setBarbero(prev => ({ ...prev, activo: nuevoEstado }));
     } catch (_) {}
+    setCargando(false);
+  };
+
+  const guardarTelefono = async () => {
+    setCargando(true);
+    try {
+      await supabase.from("barberos").update({ telefono: telefonoInput.trim() || null }).eq("id", barbero.id);
+      setBarbero(prev => ({ ...prev, telefono: telefonoInput.trim() || null }));
+      showAlert("Listo", "Número guardado");
+    } catch (_) { showAlert("Error", "No se pudo guardar el número"); }
     setCargando(false);
   };
 
@@ -276,7 +289,7 @@ export default function BarberoScreen() {
 
           {!barbero.admin_activo && (
             <View style={styles.adminBlockedBanner}>
-              <Text style={styles.adminBlockedText}>🚫 Desactivado por administración</Text>
+              <Text style={styles.adminBlockedText}>Desactivado por administración</Text>
             </View>
           )}
           <TouchableOpacity
@@ -285,9 +298,26 @@ export default function BarberoScreen() {
             onPress={toggleActivo}
           >
             <Text style={styles.toggleBtnText}>
-              {!barbero.admin_activo ? "🔒 Bloqueado (admin)" : (barbero.activo ? "🔴 Desactivarme" : "🟢 Activarme")}
+              {!barbero.admin_activo ? "Bloqueado (admin)" : (barbero.activo ? "Desactivarme" : "Activarme")}
             </Text>
           </TouchableOpacity>
+
+          <View style={styles.telefonoSection}>
+            <Text style={styles.telefonoLabel}>Tu número de contacto</Text>
+            <View style={styles.telefonoRow}>
+              <TextInput
+                style={styles.telefonoInput}
+                placeholder="Ej. 3001234567"
+                placeholderTextColor="#999"
+                keyboardType="phone-pad"
+                value={telefonoInput}
+                onChangeText={setTelefonoInput}
+              />
+              <TouchableOpacity style={styles.telefonoBtn} disabled={cargando} onPress={guardarTelefono}>
+                <Text style={styles.telefonoBtnText}>{cargando ? "..." : "Guardar"}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
 
           {!barbero.activo ? (
             <View style={styles.inactivoOverlay}>
@@ -332,7 +362,7 @@ export default function BarberoScreen() {
                       onPress={() => toggleSilla(s.id)}
                     >
                       <Text style={styles.sillaCardTexto}>
-                        💺 Silla {s.numero}
+                        Silla {s.numero}
                       </Text>
                       <Text style={[styles.sillaSubtexto, { color: colorTexto }]}>
                         {texto}
@@ -346,7 +376,7 @@ export default function BarberoScreen() {
         </View>
 
         <View style={styles.citasSection}>
-          <Text style={styles.section}>📅 Mis citas</Text>
+          <Text style={styles.section}>Mis citas</Text>
           {citas.length === 0 ? (
             <Text style={styles.sinCitas}>No tienes citas agendadas</Text>
           ) : (
@@ -357,22 +387,22 @@ export default function BarberoScreen() {
               return (
                 <View key={c.id} style={[styles.citaCard, cancelada && styles.citaCancelada]}>
                   <View style={styles.citaHeader}>
-                    <Text style={styles.citaCliente}>👤 {c.cliente_nombre}</Text>
+                    <Text style={styles.citaCliente}>Cliente: {c.cliente_nombre}</Text>
                     <Text style={[styles.citaFecha, cancelada && { color: "#999" }]}>{c.fecha}</Text>
                   </View>
-                  <Text style={styles.citaDetalle}>🕒 {c.hora?.slice(0, 5)}</Text>
-                  <Text style={styles.citaDetalle}>💺 Silla {c.sillas?.numero || "?"}</Text>
-                  {c.telefono && <Text style={styles.citaDetalle}>📞 {c.telefono}</Text>}
+                  <Text style={styles.citaDetalle}>Hora: {c.hora?.slice(0, 5)}</Text>
+                  <Text style={styles.citaDetalle}>Silla {c.sillas?.numero || "?"}</Text>
+                  {c.telefono && <Text style={styles.citaDetalle}>Teléfono: {c.telefono}</Text>}
                   <Text style={[styles.citaEstado, confirmada && styles.estadoConfirmada, cancelada && styles.estadoCancelada]}>
-                    {confirmada ? "✅ Confirmada" : cancelada ? "❌ Cancelada" : "⏳ Pendiente"}
+                    {confirmada ? "Confirmada" : cancelada ? "Cancelada" : "Pendiente"}
                   </Text>
                   {pendiente && (
                     <View style={styles.citaAcciones}>
                       <TouchableOpacity style={styles.btnConfirmar} onPress={() => cambiarEstadoCita(c.id, "confirmada")}>
-                        <Text style={styles.btnAccionTexto}>✅ Aceptar</Text>
+                        <Text style={styles.btnAccionTexto}>Aceptar</Text>
                       </TouchableOpacity>
                       <TouchableOpacity style={styles.btnCancelar} onPress={() => cambiarEstadoCita(c.id, "cancelada")}>
-                        <Text style={styles.btnAccionTexto}>❌ Cancelar</Text>
+                        <Text style={styles.btnAccionTexto}>Cancelar</Text>
                       </TouchableOpacity>
                     </View>
                   )}
@@ -453,4 +483,11 @@ const styles = StyleSheet.create({
   passwordConfirmText: { color: "#1A1A2E", fontSize: 18, fontWeight: "bold" },
   passwordBackBtn: { marginTop: 12, alignItems: "center" },
   passwordBackText: { color: "#C8962A", fontSize: 15, fontWeight: "bold" },
+
+  telefonoSection: { marginBottom: 15 },
+  telefonoLabel: { color: "#CCC", fontSize: 14, marginBottom: 8 },
+  telefonoRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  telefonoInput: { backgroundColor: "#2A2A2A", color: "white", padding: 14, borderRadius: 12, fontSize: 16, borderWidth: 1, borderColor: "#333", flex: 1 },
+  telefonoBtn: { backgroundColor: "#C8962A", paddingHorizontal: 18, paddingVertical: 14, borderRadius: 12 },
+  telefonoBtnText: { color: "#1A1A2E", fontWeight: "bold", fontSize: 14 },
 });

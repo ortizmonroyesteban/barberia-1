@@ -1,12 +1,14 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { View, Text, FlatList, TouchableOpacity, Alert, StyleSheet, ActivityIndicator } from "react-native";
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { supabase } from "../../supabase";
 import { ErrorView } from "../../components/LoadingScreen";
+import { useAlert } from "../../components/CustomAlert";
 
 export default function AdminSillasScreen() {
   const navigation = useNavigation();
+  const { showAlert } = useAlert();
   const [sillas, setSillas] = useState([]);
   const [asignaciones, setAsignaciones] = useState([]);
   const [barberos, setBarberos] = useState([]);
@@ -54,17 +56,17 @@ export default function AdminSillasScreen() {
     const maxNum = sillas.reduce((m, s) => Math.max(m, s.numero || 0), 0);
     try {
       const { error } = await supabase.from("sillas").insert([{ numero: maxNum + 1, estado: "libre" }]);
-      if (error) Alert.alert("Error", error.message);
-    } catch (_) { Alert.alert("Error", "Error de conexión"); }
+      if (error) showAlert("Error", error.message);
+    } catch (_) { showAlert("Error", "Error de conexión"); }
   };
 
   const eliminar = async (id) => {
     const barbero = barberoDeSilla(id);
-    if (barbero) { Alert.alert("Error", `La silla está asignada a ${barbero.nombre}`); return; }
+    if (barbero) { showAlert("Error", `La silla está asignada a ${barbero.nombre}`); return; }
     try {
       const { error } = await supabase.from("sillas").delete().eq("id", id);
-      if (error) Alert.alert("Error", error.message);
-    } catch (_) { Alert.alert("Error", "Error de conexión"); }
+      if (error) showAlert("Error", error.message);
+    } catch (_) { showAlert("Error", "Error de conexión"); }
   };
 
   const renderItem = ({ item }) => {

@@ -1,14 +1,16 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
-import { View, Text, FlatList, TouchableOpacity, Alert, StyleSheet, Platform, ScrollView, ActivityIndicator } from "react-native";
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, Platform, ScrollView, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { supabase } from "../../supabase";
 import DatePicker from "../../components/DatePicker";
 import { fechaLocal } from "../../utils/horarios";
 import { ErrorView } from "../../components/LoadingScreen";
+import { useAlert } from "../../components/CustomAlert";
 
 export default function AdminBookingsScreen() {
   const navigation = useNavigation();
+  const { showAlert } = useAlert();
   const [modo, setModo] = useState("proximas");
   const [citas, setCitas] = useState([]);
   const [barberos, setBarberos] = useState([]);
@@ -21,7 +23,7 @@ export default function AdminBookingsScreen() {
   citasRef.current = citas;
 
   const cargarBarberos = useCallback(() =>
-    supabase.from("barberos").select("id, nombre").order("nombre").then(({ data }) => { setBarberos(data || []); }), []);
+    supabase.from("barberos").select("id, nombre, telefono").order("nombre").then(({ data }) => { setBarberos(data || []); }), []);
 
   const cargarCitas = useCallback(async () => {
     setCargando(true);
@@ -56,30 +58,35 @@ export default function AdminBookingsScreen() {
     return () => { supabase.removeChannel(channel); };
   }, [cargarCitas]);
 
-  const confirmarEliminar = () => {
-    if (Platform.OS === "web") return window.confirm("¿Eliminar esta cita?");
-    return new Promise(resolve => {
-      Alert.alert("Eliminar", "¿Eliminar esta cita?", [
-        { text: "Cancelar", onPress: () => resolve(false) },
-        { text: "Eliminar", onPress: () => resolve(true) },
-      ]);
-    });
+  const confirmarEliminar = (id) => {
+    if (Platform.OS === "web") {
+      if (window.confirm("¿Eliminar esta cita?")) ejecutarEliminar(id);
+      return;
+    }
+    showAlert("Eliminar", "¿Eliminar esta cita?", [
+      { text: "Cancelar" },
+      { text: "Eliminar", onPress: () => ejecutarEliminar(id) },
+    ]);
   };
 
-  const eliminar = useCallback(async (id) => {
-    const confirmado = await confirmarEliminar();
-    if (!confirmado) return;
+  const ejecutarEliminar = useCallback(async (id) => {
     const anterior = citasRef.current;
     setCitas(prev => prev.filter(c => c.id !== id));
     try {
       const { error } = await supabase.from("citas").delete().eq("id", id);
-      if (error) { setCitas(anterior); Alert.alert("Error", error.message); }
+      if (error) { setCitas(anterior); showAlert("Error", error.message); }
     } catch (_) { setCitas(anterior); }
   }, []);
 
   const barberoNombre = useMemo(() => {
     const m = {};
     barberos.forEach(b => { m[b.id] = b.nombre; });
+    return m;
+  }, [barberos]);
+
+  const barberoTelefono = useMemo(() => {
+    const m = {};
+    barberos.forEach(b => { m[b.id] = b.telefono; });
     return m;
   }, [barberos]);
 
@@ -105,11 +112,12 @@ export default function AdminBookingsScreen() {
           {abierto && (
             <View style={styles.cardDetalle}>
               <Text style={styles.detalleText}>Barbero: {barberoNombre[item.barbero_id] || "?"}</Text>
+              {barberoTelefono[item.barbero_id] && <Text style={styles.detalleText}>Tel. barbero: {barberoTelefono[item.barbero_id]}</Text>}
               <Text style={styles.detalleText}>Hora: {item.hora?.slice(0, 5)}</Text>
-              {item.sillas?.numero && <Text style={styles.detalleText}>💺 Silla: {item.sillas.numero}</Text>}
-              {item.telefono && <Text style={styles.detalleText}>📞 {item.telefono}</Text>}
-              <TouchableOpacity style={styles.deleteBtn} onPress={() => eliminar(item.id)}>
-                <Text style={styles.deleteBtnText}>🗑️ Eliminar</Text>
+              {item.sillas?.numero && <Text style={styles.detalleText}>Silla: {item.sillas.numero}</Text>}
+              {item.telefono && <Text style={styles.detalleText}>Teléfono: {item.telefono}</Text>}
+              <TouchableOpacity style={styles.deleteBtn} onPress={() => confirmarEliminar(item.id)}>
+                <Text style={styles.deleteBtnText}>Eliminar</Text>
               </TouchableOpacity>
             </View>
           )}

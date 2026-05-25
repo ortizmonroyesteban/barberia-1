@@ -1,22 +1,24 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, KeyboardAvoidingView, Platform } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { loginAdmin } from "../../services/adminAuthService";
+import { useAlert } from "../../components/CustomAlert";
 
 export default function AdminLoginScreen() {
   const navigation = useNavigation();
+  const { showAlert } = useAlert();
   const [password, setPassword] = useState("");
   const [cargando, setCargando] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
   const ingresar = async () => {
-    if (!password.trim()) { Alert.alert("Error", "Ingresa la contraseña"); return; }
+    if (!password.trim()) { showAlert("Error", "Ingresa la contraseña"); return; }
     setCargando(true);
     const ok = await loginAdmin(password.trim());
     setCargando(false);
     if (ok) navigation.replace("AdminDrawer");
-    else Alert.alert("Error", "Contraseña incorrecta");
+    else showAlert("Error", "Contraseña incorrecta");
   };
 
   return (

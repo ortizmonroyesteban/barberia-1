@@ -61,7 +61,7 @@ export default function BarberDetailScreen() {
           )}
           <Text style={styles.nombre}>{barbero?.nombre || "Sin barbero"}</Text>
           {barbero?.especialidad && <Text style={styles.especialidad}>{barbero.especialidad}</Text>}
-          <Text style={styles.sillaInfo}>💺 Silla {silla.numero}</Text>
+          <Text style={styles.sillaInfo}>Silla {silla.numero}</Text>
           {!disponible && (
             <View style={styles.inactivoBadge}>
               <Text style={styles.inactivoText}>🔴 No disponible</Text>

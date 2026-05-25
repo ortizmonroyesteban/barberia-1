@@ -13,11 +13,14 @@ import ConfirmationScreen from "./screens/ConfirmationScreen";
 import AdminLoginScreen from "./screens/admin/AdminLoginScreen";
 import AdminDrawer from "./screens/admin/AdminDrawer";
 import BarberoScreen from "./screens/BarberoScreen";
+import MyBookingsScreen from "./screens/MyBookingsScreen";
+import { AlertProvider } from "./components/CustomAlert";
 
 const Stack = createNativeStackNavigator();
 
 export default function App() {
   return (
+    <AlertProvider>
     <GestureHandlerRootView style={{ flex: 1, overflow: "hidden" }}>
       <SafeAreaProvider>
       <NavigationContainer>
@@ -36,9 +39,11 @@ export default function App() {
           <Stack.Screen name="AdminLogin" component={AdminLoginScreen} />
           <Stack.Screen name="AdminDrawer" component={AdminDrawer} />
           <Stack.Screen name="BarberPanel" component={BarberoScreen} />
+          <Stack.Screen name="MyBookings" component={MyBookingsScreen} />
         </Stack.Navigator>
       </NavigationContainer>
       </SafeAreaProvider>
     </GestureHandlerRootView>
+    </AlertProvider>
   );
 }

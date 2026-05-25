@@ -1,21 +1,23 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ScrollView } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { registrarCita } from "../services/citasService";
+import { useAlert } from "../components/CustomAlert";
 
 export default function BookingScreen() {
   const navigation = useNavigation();
   const route = useRoute();
+  const { showAlert } = useAlert();
   const { barbero, sillaId, sillaNum, fecha, hora } = route.params;
   const [nombre, setNombre] = useState("");
   const [telefono, setTelefono] = useState("");
   const [cargando, setCargando] = useState(false);
 
   const confirmar = async () => {
-    if (!nombre.trim()) { Alert.alert("Error", "Ingresa tu nombre"); return; }
+    if (!nombre.trim()) { showAlert("Error", "Ingresa tu nombre"); return; }
     const tel = telefono.replace(/[^0-9]/g, "");
-    if (tel && tel.length < 7) { Alert.alert("Error", "El teléfono debe tener al menos 7 dígitos"); return; }
+    if (!tel || tel.length < 7) { showAlert("Error", "Ingresa un teléfono válido (al menos 7 dígitos)"); return; }
     setCargando(true);
     try {
       const cita = await registrarCita({ clienteNombre: nombre.trim(), barberoId: barbero.id, sillaId, fecha, hora, telefono: tel });
@@ -25,9 +27,9 @@ export default function BookingScreen() {
           silla: sillaNum, fecha, hora: hora.slice(0, 5), telefono: tel,
         });
       } else {
-        Alert.alert("Error", "No se pudo agendar la cita");
+        showAlert("Error", "No se pudo agendar la cita");
       }
-    } catch (_) { Alert.alert("Error", "Error de conexión"); }
+    } catch (_) { showAlert("Error", "Error de conexión"); }
     setCargando(false);
   };
 

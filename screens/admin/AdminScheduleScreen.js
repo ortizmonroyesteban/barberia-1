@@ -1,16 +1,18 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { View, Text, TouchableOpacity, Modal, Alert, StyleSheet, Platform, ScrollView, ActivityIndicator } from "react-native";
+import { View, Text, TouchableOpacity, Modal, StyleSheet, Platform, ScrollView, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { supabase } from "../../supabase";
 import { obtenerHorarios, guardarHorario } from "../../services/horarioService";
 import TimePicker from "../../components/TimePicker";
 import { ErrorView } from "../../components/LoadingScreen";
+import { useAlert } from "../../components/CustomAlert";
 
 const dias = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
 
 export default function AdminScheduleScreen() {
   const navigation = useNavigation();
+  const { showAlert } = useAlert();
   const [barberos, setBarberos] = useState([]);
   const [selectedBarber, setSelectedBarber] = useState(null);
   const [horarios, setHorarios] = useState({});
@@ -63,12 +65,12 @@ export default function AdminScheduleScreen() {
   };
 
   const guardar = async () => {
-    if (!selectedBarber) { Alert.alert("Error", "Selecciona un barbero"); return; }
+    if (!selectedBarber) { showAlert("Error", "Selecciona un barbero"); return; }
     try {
       await guardarHorario(selectedBarber, horarios);
-      Alert.alert("Listo", "Horarios guardados");
+      showAlert("Listo", "Horarios guardados");
     } catch {
-      Alert.alert("Error", "No se pudieron guardar los horarios");
+      showAlert("Error", "No se pudieron guardar los horarios");
     }
   };
 
